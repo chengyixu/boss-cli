@@ -36,20 +36,20 @@ A CLI for BOSS 直聘 — search jobs, view recommendations, manage applications
 
 ```bash
 # Recommended: uv tool (fast, isolated)
-uv tool install boss-cli
+uv tool install kabi-boss-cli
 
 # Or: pipx
-pipx install boss-cli
+pipx install kabi-boss-cli
 
 # Optional: YAML output support
-pip install boss-cli[yaml]
+pip install kabi-boss-cli[yaml]
 ```
 
 Upgrade to the latest version:
 
 ```bash
-uv tool upgrade boss-cli
-# Or: pipx upgrade boss-cli
+uv tool upgrade kabi-boss-cli
+# Or: pipx upgrade kabi-boss-cli
 ```
 
 From source:

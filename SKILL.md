@@ -21,12 +21,12 @@ tags:
 
 ```bash
 # Install (requires Python 3.10+)
-uv tool install boss-cli
-# Or: pipx install boss-cli
+uv tool install kabi-boss-cli
+# Or: pipx install kabi-boss-cli
 
 # Upgrade to latest (recommended)
-uv tool upgrade boss-cli
-# Or: pipx upgrade boss-cli
+uv tool upgrade kabi-boss-cli
+# Or: pipx upgrade kabi-boss-cli
 ```
 
 ## Authentication

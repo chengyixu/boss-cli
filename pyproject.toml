@@ -30,6 +30,9 @@ dev = [
 yaml = [
     "pyyaml>=6.0",
 ]
+browser = [
+    "camoufox>=0.4",
+]
 
 [project.urls]
 Homepage = "https://github.com/jackwener/boss-cli"

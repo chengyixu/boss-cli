@@ -56,6 +56,24 @@ def login(qrcode: bool, cookie_source: str | None) -> None:
         raise SystemExit(1)
 
     if qrcode:
+        # Prefer browser-assisted login (captures __zp_stoken__ via JS)
+        # Fallback to HTTP-only QR flow when camoufox is unavailable
+        try:
+            from ..browser_login import browser_qr_login, BrowserLoginUnavailable
+            try:
+                cred = browser_qr_login()
+                _finalize_login(cred, from_qr=True)
+                return
+            except BrowserLoginUnavailable as e:
+                console.print(
+                    f"[yellow]⚠️  浏览器辅助登录不可用: {e}\n"
+                    "   安装方式: pip install 'kabi-boss-cli[browser]' && python -m camoufox fetch\n"
+                    "   回退到 HTTP 扫码登录...[/yellow]\n"
+                )
+        except ImportError:
+            pass
+
+        # Fallback: HTTP-only QR login
         from ..auth import qr_login
         import asyncio
         try:
@@ -73,6 +91,17 @@ def login(qrcode: bool, cookie_source: str | None) -> None:
         else:
             # Fallback to QR login
             console.print("[yellow]未找到浏览器 Cookie，尝试二维码登录...[/yellow]")
+            try:
+                from ..browser_login import browser_qr_login, BrowserLoginUnavailable
+                try:
+                    cred = browser_qr_login()
+                    _finalize_login(cred, from_qr=True)
+                    return
+                except BrowserLoginUnavailable:
+                    pass
+            except ImportError:
+                pass
+
             from ..auth import qr_login
             import asyncio
             try:

@@ -100,6 +100,14 @@ class TestAuthCommands:
             assert result.exit_code == 0
             assert "未登录" in result.output
 
+    def test_status_yaml_without_auth(self):
+        with patch("boss_cli.auth.get_credential", return_value=None):
+            result = runner.invoke(cli, ["status", "--yaml"])
+            assert result.exit_code == 0
+            data = json.loads(result.output)
+            assert data["authenticated"] is False
+            assert data["credential_present"] is False
+
     def test_status_with_auth(self):
         mock_cred = MagicMock()
         mock_cred.cookies = {"__zp_stoken__": "s", "wt2": "1", "wbg": "2", "zp_at": "3"}
@@ -303,7 +311,6 @@ class TestConstants:
     def test_api_urls_defined(self):
         from boss_cli import constants
         assert constants.JOB_SEARCH_URL
-        assert constants.JOB_RECOMMEND_URL
         assert constants.JOB_DETAIL_URL
         assert constants.DELIVER_LIST_URL
         assert constants.INTERVIEW_DATA_URL
@@ -512,6 +519,77 @@ class TestClient:
             data = client.get_recommend_jobs(page=1)
             assert data["jobList"][0]["jobName"] == "Java"
             assert data["hasMore"] is True
+
+
+class TestAuthHealthVerification:
+    """Test auth health caching and refresh behavior."""
+
+    def test_verify_credential_details_uses_ttl_cache(self, monkeypatch):
+        from boss_cli.auth import Credential, _AUTH_HEALTH_CACHE, verify_credential_details
+
+        calls = {"count": 0}
+
+        class FakeClient:
+            def __init__(self, credential, request_delay=0.2):
+                pass
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def search_jobs(self, **kwargs):
+                calls["count"] += 1
+                return {"jobList": []}
+
+            def get_recommend_jobs(self, page=1):
+                calls["count"] += 1
+                return {"jobList": []}
+
+        _AUTH_HEALTH_CACHE.clear()
+        monkeypatch.setattr("boss_cli.client.BossClient", FakeClient)
+
+        cred = Credential(cookies={"__zp_stoken__": "s", "wt2": "1", "wbg": "2", "zp_at": "3"})
+        first = verify_credential_details(cred)
+        second = verify_credential_details(cred)
+
+        assert first["authenticated"] is True
+        assert second["recommend_authenticated"] is True
+        assert calls["count"] == 2
+        assert len(_AUTH_HEALTH_CACHE) == 1
+
+    def test_verify_credential_force_refresh_bypasses_cache(self, monkeypatch):
+        from boss_cli.auth import Credential, _AUTH_HEALTH_CACHE, verify_credential_details
+
+        calls = {"count": 0}
+
+        class FakeClient:
+            def __init__(self, credential, request_delay=0.2):
+                pass
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def search_jobs(self, **kwargs):
+                calls["count"] += 1
+                return {"jobList": []}
+
+            def get_recommend_jobs(self, page=1):
+                calls["count"] += 1
+                return {"jobList": []}
+
+        _AUTH_HEALTH_CACHE.clear()
+        monkeypatch.setattr("boss_cli.client.BossClient", FakeClient)
+
+        cred = Credential(cookies={"__zp_stoken__": "s", "wt2": "1", "wbg": "2", "zp_at": "3"})
+        verify_credential_details(cred)
+        verify_credential_details(cred, force_refresh=True)
+
+        assert calls["count"] == 4
 
 
 # ── Index Cache ─────────────────────────────────────────────────────
@@ -814,7 +892,7 @@ class TestCommandFailures:
         mock_cred.cookies = {"__zp_stoken__": "s", "wt2": "1", "wbg": "2", "zp_at": "3"}
 
         with patch("boss_cli.commands._common.get_credential", return_value=mock_cred), \
-             patch("boss_cli.commands.social.BossClient") as MockClient:
+             patch("boss_cli.commands._common.BossClient") as MockClient:
             mock_instance = MagicMock()
             mock_instance.search_jobs.side_effect = BossApiError("boom")
             mock_instance.__enter__ = MagicMock(return_value=mock_instance)
@@ -824,3 +902,33 @@ class TestCommandFailures:
             result = runner.invoke(cli, ["batch-greet", "Python", "--dry-run"])
             assert result.exit_code == 1
             assert "搜索失败" in result.output
+
+    def test_batch_greet_refreshes_after_session_expiry(self):
+        from boss_cli.exceptions import SessionExpiredError
+
+        mock_cred = MagicMock()
+        mock_cred.cookies = {"__zp_stoken__": "s", "wt2": "1", "wbg": "2", "zp_at": "3"}
+        fresh_cred = MagicMock()
+        fresh_cred.cookies = {"__zp_stoken__": "fresh", "wt2": "1", "wbg": "2", "zp_at": "3"}
+
+        initial_client = MagicMock()
+        initial_client.__enter__ = MagicMock(return_value=initial_client)
+        initial_client.__exit__ = MagicMock(return_value=False)
+        initial_client.search_jobs.return_value = {
+            "jobList": [{"jobName": "Python", "brandName": "Acme", "securityId": "sec-1", "lid": "lid-1"}]
+        }
+        initial_client.add_friend.side_effect = SessionExpiredError()
+
+        refreshed_client = MagicMock()
+        refreshed_client.__enter__ = MagicMock(return_value=refreshed_client)
+        refreshed_client.__exit__ = MagicMock(return_value=False)
+        refreshed_client.add_friend.return_value = {"success": True}
+
+        with patch("boss_cli.commands._common.get_credential", return_value=mock_cred), \
+             patch("boss_cli.commands._common.BossClient", side_effect=[initial_client, initial_client, refreshed_client]), \
+             patch("boss_cli.auth.extract_browser_credential", return_value=fresh_cred), \
+             patch("boss_cli.auth.clear_credential") as clear_credential:
+            result = runner.invoke(cli, ["batch-greet", "Python", "-n", "1", "-y"])
+            assert result.exit_code == 0
+            assert "1/1" in result.output
+            clear_credential.assert_not_called()

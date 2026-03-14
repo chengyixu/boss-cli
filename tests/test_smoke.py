@@ -45,6 +45,7 @@ def _invoke(*args: str):
 
 def _invoke_json(*args: str):
     """Run a CLI command with --json and return (result, parsed_data)."""
+    _throttle_live_requests()
     result = runner.invoke(cli, [*args, "--json"])
     if result.exit_code != 0:
         return result, None
@@ -75,11 +76,21 @@ def live_auth_status() -> dict | None:
 @pytest.fixture(scope="module")
 def require_live_auth(live_auth_status: dict | None) -> None:
     """Skip auth-dependent smoke tests unless the session is truly usable."""
-    if not live_auth_status or not live_auth_status.get("authenticated"):
+    if not live_auth_status or not live_auth_status.get("search_authenticated"):
         reason = ""
         if live_auth_status:
             reason = live_auth_status.get("reason", "")
         pytest.skip(f"Live auth unavailable: {reason or 'boss status 未通过'}")
+
+
+@pytest.fixture(scope="module")
+def require_recommend_auth(live_auth_status: dict | None) -> None:
+    """Skip recommend smoke when only search auth is healthy."""
+    if not live_auth_status or not live_auth_status.get("recommend_authenticated"):
+        reason = ""
+        if live_auth_status:
+            reason = live_auth_status.get("reason", "")
+        pytest.skip(f"Live recommend unavailable: {reason or 'boss recommend 未通过'}")
 
 
 @smoke
@@ -129,6 +140,7 @@ class TestSearch:
 class TestRecommend:
     """Verify personalized recommendations on the live API."""
 
+    @pytest.mark.usefixtures("require_recommend_auth")
     def test_recommend_json(self):
         result, data = _invoke_json("recommend")
         assert result.exit_code == 0

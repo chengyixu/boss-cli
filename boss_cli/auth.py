@@ -8,6 +8,7 @@ Strategy:
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import shutil
@@ -20,6 +21,7 @@ import httpx
 import qrcode
 
 from boss_cli.constants import (
+    AUTH_HEALTH_CACHE_TTL_S,
     BASE_URL,
     CONFIG_DIR,
     CREDENTIAL_FILE,
@@ -39,6 +41,7 @@ _CREDENTIAL_TTL_SECONDS = CREDENTIAL_TTL_DAYS * 86400
 
 # QR poll config
 POLL_TIMEOUT_S = 240  # 4 minutes
+_AUTH_HEALTH_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
 
 
 # ── Credential data class ───────────────────────────────────────────
@@ -129,6 +132,7 @@ def clear_credential() -> None:
     if CREDENTIAL_FILE.exists():
         CREDENTIAL_FILE.unlink()
         logger.info("Credential removed: %s", CREDENTIAL_FILE)
+    _AUTH_HEALTH_CACHE.clear()
 
 
 # ── Browser cookie extraction ───────────────────────────────────────
@@ -461,7 +465,12 @@ def get_credential() -> Credential | None:
     return None
 
 
-def verify_credential_details(credential: Credential) -> dict[str, Any]:
+def _credential_cache_key(credential: Credential) -> str:
+    payload = json.dumps(sorted(credential.cookies.items()), ensure_ascii=False, separators=(",", ":"))
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def verify_credential_details(credential: Credential, *, force_refresh: bool = False) -> dict[str, Any]:
     """Verify credential health across the key authenticated flows."""
     if not credential.has_required_cookies:
         missing = ", ".join(credential.missing_required_cookies)
@@ -474,6 +483,13 @@ def verify_credential_details(credential: Credential) -> dict[str, Any]:
 
     from .client import BossClient
     from .exceptions import BossApiError, SessionExpiredError
+
+    cache_key = _credential_cache_key(credential)
+    now = time.time()
+    if not force_refresh:
+        cached = _AUTH_HEALTH_CACHE.get(cache_key)
+        if cached and (now - cached[0]) <= AUTH_HEALTH_CACHE_TTL_S:
+            return dict(cached[1])
 
     checks = {
         "search_authenticated": False,
@@ -505,10 +521,11 @@ def verify_credential_details(credential: Credential) -> dict[str, Any]:
     }
     if failures:
         result["reason"] = "; ".join(failures)
+    _AUTH_HEALTH_CACHE[cache_key] = (time.time(), dict(result))
     return result
 
 
-def verify_credential(credential: Credential) -> tuple[bool, str | None]:
+def verify_credential(credential: Credential, *, force_refresh: bool = False) -> tuple[bool, str | None]:
     """Verify that the credential can access an authenticated API."""
-    result = verify_credential_details(credential)
+    result = verify_credential_details(credential, force_refresh=force_refresh)
     return result["authenticated"], result.get("reason")

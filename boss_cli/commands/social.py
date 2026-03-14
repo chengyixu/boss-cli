@@ -9,13 +9,14 @@ import time
 import click
 from rich.table import Table
 
-from ..client import BossClient, resolve_city
+from ..client import resolve_city
 from ..constants import DEGREE_CODES, EXP_CODES, SALARY_CODES
 from ..exceptions import BossApiError
 from ._common import (
     console,
     handle_command,
     require_auth,
+    run_client_action,
     structured_output_options,
 )
 
@@ -97,66 +98,76 @@ def batch_greet(keyword: str, city: str, count: int, salary: str | None, exp: st
     degree_code = DEGREE_CODES.get(degree) if degree else None
 
     try:
-        with BossClient(cred) as client:
-            # Search for jobs
-            data = client.search_jobs(
-                query=keyword, city=city_code,
-                experience=exp_code, degree=degree_code, salary=salary_code,
-            )
+        data = run_client_action(
+            cred,
+            lambda client: client.search_jobs(
+                query=keyword,
+                city=city_code,
+                experience=exp_code,
+                degree=degree_code,
+                salary=salary_code,
+            ),
+        )
 
-            job_list = data.get("jobList", [])
-            if not job_list:
-                console.print("[yellow]没有找到匹配的职位[/yellow]")
+        job_list = data.get("jobList", [])
+        if not job_list:
+            console.print("[yellow]没有找到匹配的职位[/yellow]")
+            return
+
+        targets = job_list[:count]
+
+        # Preview table
+        table = Table(title=f"🎯 将向以下 {len(targets)} 个职位打招呼", show_lines=True)
+        table.add_column("#", style="dim", width=3)
+        table.add_column("职位", style="bold cyan", max_width=25)
+        table.add_column("公司", style="green", max_width=20)
+        table.add_column("薪资", style="yellow", max_width=12)
+
+        for i, job in enumerate(targets, 1):
+            table.add_row(str(i), job.get("jobName", "-"), job.get("brandName", "-"), job.get("salaryDesc", "-"))
+
+        console.print(table)
+
+        if dry_run:
+            console.print("\n  [dim]📋 预览模式，未实际发送[/dim]")
+            return
+
+        if not yes:
+            confirm = click.confirm(f"\n确定向 {len(targets)} 个职位打招呼吗?")
+            if not confirm:
+                console.print("[dim]已取消[/dim]")
                 return
 
-            targets = job_list[:count]
+        # Send greetings with auth auto-refresh on every request.
+        success = 0
+        for i, job in enumerate(targets, 1):
+            security_id = job.get("securityId", "")
+            lid = job.get("lid", "")
+            job_name = job.get("jobName", "?")
+            brand = job.get("brandName", "?")
 
-            # Preview table
-            table = Table(title=f"🎯 将向以下 {len(targets)} 个职位打招呼", show_lines=True)
-            table.add_column("#", style="dim", width=3)
-            table.add_column("职位", style="bold cyan", max_width=25)
-            table.add_column("公司", style="green", max_width=20)
-            table.add_column("薪资", style="yellow", max_width=12)
+            if not security_id:
+                console.print(f"  [{i}] [yellow]跳过 {job_name} (无 securityId)[/yellow]")
+                continue
 
-            for i, job in enumerate(targets, 1):
-                table.add_row(str(i), job.get("jobName", "-"), job.get("brandName", "-"), job.get("salaryDesc", "-"))
+            try:
+                run_client_action(
+                    cred,
+                    lambda client, security_id=security_id, lid=lid: client.add_friend(
+                        security_id=security_id,
+                        lid=lid,
+                    ),
+                )
+                console.print(f"  [{i}] [green]✅ {job_name} @ {brand}[/green]")
+                success += 1
+            except BossApiError as e:
+                console.print(f"  [{i}] [red]❌ {job_name}: {e}[/red]")
 
-            console.print(table)
+            # Explicit rate-limit delay between greetings to avoid detection
+            if i < len(targets):
+                time.sleep(1.5)
 
-            if dry_run:
-                console.print("\n  [dim]📋 预览模式，未实际发送[/dim]")
-                return
-
-            if not yes:
-                confirm = click.confirm(f"\n确定向 {len(targets)} 个职位打招呼吗?")
-                if not confirm:
-                    console.print("[dim]已取消[/dim]")
-                    return
-
-            # Send greetings with rate limiting
-            success = 0
-            for i, job in enumerate(targets, 1):
-                security_id = job.get("securityId", "")
-                lid = job.get("lid", "")
-                job_name = job.get("jobName", "?")
-                brand = job.get("brandName", "?")
-
-                if not security_id:
-                    console.print(f"  [{i}] [yellow]跳过 {job_name} (无 securityId)[/yellow]")
-                    continue
-
-                try:
-                    client.add_friend(security_id=security_id, lid=lid)
-                    console.print(f"  [{i}] [green]✅ {job_name} @ {brand}[/green]")
-                    success += 1
-                except BossApiError as e:
-                    console.print(f"  [{i}] [red]❌ {job_name}: {e}[/red]")
-
-                # Explicit rate-limit delay between greetings to avoid detection
-                if i < len(targets):
-                    time.sleep(1.5)
-
-            console.print(f"\n[bold]完成: {success}/{len(targets)} 个打招呼成功[/bold]")
+        console.print(f"\n[bold]完成: {success}/{len(targets)} 个打招呼成功[/bold]")
 
     except BossApiError as exc:
         console.print(f"[red]❌ 搜索失败: {exc}[/red]")

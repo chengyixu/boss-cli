@@ -5,6 +5,7 @@ from pathlib import Path
 # ── Config ──────────────────────────────────────────────────────────
 CONFIG_DIR = Path.home() / ".config" / "boss-cli"
 CREDENTIAL_FILE = CONFIG_DIR / "credential.json"
+AUTH_HEALTH_CACHE_TTL_S = 45
 
 # ── Base URL ────────────────────────────────────────────────────────
 BASE_URL = "https://www.zhipin.com"
@@ -23,7 +24,6 @@ QR_DISPATCHER_URL = "/wapi/zppassport/qrcode/dispatcher"
 
 # ── Job API ─────────────────────────────────────────────────────────
 JOB_SEARCH_URL = "/wapi/zpgeek/search/joblist.json"
-JOB_RECOMMEND_URL = "/wapi/zpgeek/pc/recommend/job/list.json"
 JOB_CARD_URL = "/wapi/zpgeek/job/card.json"
 JOB_DETAIL_URL = "/wapi/zpgeek/job/detail.json"
 JOB_HISTORY_URL = "/wapi/zpgeek/history/joblist.json"

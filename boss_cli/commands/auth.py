@@ -26,7 +26,7 @@ def login(qrcode: bool, cookie_source: str | None) -> None:
     from ..auth import clear_credential, verify_credential
 
     def _finalize_login(cred) -> None:
-        authenticated, message = verify_credential(cred)
+        authenticated, message = verify_credential(cred, force_refresh=True)
         if authenticated:
             console.print(f"[green]✅ 登录成功！[/green] ({len(cred.cookies)} cookies)")
             return
@@ -118,6 +118,13 @@ def status(as_json: bool, as_yaml: bool) -> None:
     else:
         if as_json:
             click.echo(json.dumps({"authenticated": False, "credential_present": False}))
+        elif as_yaml:
+            data = {"authenticated": False, "credential_present": False}
+            try:
+                import yaml
+                click.echo(yaml.dump(data, allow_unicode=True))
+            except ImportError:
+                click.echo(json.dumps(data, indent=2, ensure_ascii=False))
         else:
             console.print("[yellow]⚠️  未登录[/yellow]，使用 [bold]boss login[/bold] 扫码登录")
 

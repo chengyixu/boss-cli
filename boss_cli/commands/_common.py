@@ -16,7 +16,8 @@ from ..exceptions import BossApiError, SessionExpiredError, error_code_for_excep
 
 T = TypeVar("T")
 
-console = Console()
+# Rich output → stderr (so structured JSON/YAML stays clean on stdout)
+console = Console(stderr=True)
 error_console = Console(stderr=True)
 
 # ── Schema envelope version ─────────────────────────────────────────

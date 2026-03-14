@@ -51,6 +51,8 @@ HEADERS = {
     "Sec-Fetch-Site": "same-origin",
     "Accept": "application/json, text/plain, */*",
     "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+    "DNT": "1",
+    "Priority": "u=1, i",
     "Referer": f"{BASE_URL}/",
 }
 

@@ -58,6 +58,7 @@ class BossClient:
         self._max_retries = max_retries
         self._last_request_time = 0.0
         self._request_count = 0
+        self._rate_limit_count = 0
         self._http: httpx.Client | None = None
 
     def _build_client(self) -> httpx.Client:
@@ -138,6 +139,15 @@ class BossClient:
         if code in (17, 19):
             raise ParamError(message, code=code)
         if code == 9:
+            # Rate limited — auto-cooldown with exponential backoff
+            self._rate_limit_count += 1
+            cooldown = min(60, 10 * (2 ** (self._rate_limit_count - 1)))
+            self._request_delay = max(self._request_delay, self._base_request_delay * 2)
+            logger.warning(
+                "Rate limited (count=%d), cooling down %.0fs, delay raised to %.1fs",
+                self._rate_limit_count, cooldown, self._request_delay,
+            )
+            time.sleep(cooldown)
             raise RateLimitError()
 
         raise BossApiError(f"{action}: {message} (code={code})", code=code, response=data)
@@ -197,9 +207,20 @@ class BossClient:
         raise BossApiError(f"Request failed after {self._max_retries} retries")
 
     def _get(self, url: str, params: dict[str, Any] | None = None, action: str = "") -> dict[str, Any]:
-        """GET request with response validation."""
+        """GET request with response validation and rate-limit retry."""
         data = self._request("GET", url, params=params)
-        return self._handle_response(data, action)
+        try:
+            result = self._handle_response(data, action)
+            # Reset rate-limit counter on success
+            self._rate_limit_count = 0
+            return result
+        except RateLimitError:
+            # Auto-retry once after cooldown (cooldown already happened in _handle_response)
+            logger.info("Retrying after rate-limit cooldown...")
+            data = self._request("GET", url, params=params)
+            result = self._handle_response(data, action)
+            self._rate_limit_count = 0
+            return result
 
     # ── Job Search & Browse ─────────────────────────────────────────
 

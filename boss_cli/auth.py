@@ -396,11 +396,16 @@ async def _wait_for_scan(client: httpx.AsyncClient, qr_id: str) -> bool:
 
 
 async def _wait_for_confirm(client: httpx.AsyncClient, qr_id: str) -> bool:
-    """Step 4: Long-poll waiting for login confirmation."""
+    """Step 4: Long-poll waiting for login confirmation.
+
+    Must check the ``login`` field in the JSON body — a 200 status alone
+    does NOT mean the user has confirmed on their phone.
+    """
     try:
         resp = await client.get(QR_SCAN_LOGIN_URL, params={"qrId": qr_id}, timeout=35)
         resp.raise_for_status()
-        return resp.status_code == 200
+        data = resp.json()
+        return data.get("login", False) is True
     except httpx.ReadTimeout:
         return False
 

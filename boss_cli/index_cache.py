@@ -55,7 +55,7 @@ def save_index(jobs: list[dict[str, Any]], source: str = "search") -> None:
         "items": entries,
     }
 
-    INDEX_CACHE_FILE.write_text(json.dumps(payload, indent=2, ensure_ascii=False))
+    INDEX_CACHE_FILE.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
     INDEX_CACHE_FILE.chmod(0o600)
     logger.debug("Saved index cache with %d entries from %s", len(entries), source)
 
@@ -72,7 +72,7 @@ def get_job_by_index(index: int) -> dict[str, Any] | None:
         return None
 
     try:
-        data = json.loads(INDEX_CACHE_FILE.read_text())
+        data = json.loads(INDEX_CACHE_FILE.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return None
 
@@ -89,7 +89,7 @@ def get_index_info() -> dict[str, Any]:
         return {"exists": False, "count": 0}
 
     try:
-        data = json.loads(INDEX_CACHE_FILE.read_text())
+        data = json.loads(INDEX_CACHE_FILE.read_text(encoding="utf-8"))
         return {
             "exists": True,
             "source": data.get("source", "unknown"),

@@ -68,7 +68,7 @@ class Credential:
 def save_credential(credential: Credential) -> None:
     """Save credential to config file."""
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-    CREDENTIAL_FILE.write_text(json.dumps(credential.to_dict(), indent=2, ensure_ascii=False))
+    CREDENTIAL_FILE.write_text(json.dumps(credential.to_dict(), indent=2, ensure_ascii=False), encoding="utf-8")
     CREDENTIAL_FILE.chmod(0o600)
     logger.info("Credential saved to %s", CREDENTIAL_FILE)
 
@@ -82,7 +82,7 @@ def load_credential() -> Credential | None:
     if not CREDENTIAL_FILE.exists():
         return None
     try:
-        data = json.loads(CREDENTIAL_FILE.read_text())
+        data = json.loads(CREDENTIAL_FILE.read_text(encoding="utf-8"))
         cred = Credential.from_dict(data)
         if not cred.is_valid:
             return None

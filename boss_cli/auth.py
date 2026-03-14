@@ -11,9 +11,12 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
+import platform
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from typing import Any
 
@@ -27,6 +30,7 @@ from boss_cli.constants import (
     CREDENTIAL_FILE,
     HEADERS,
     REQUIRED_COOKIES,
+    QR_CODE_URL,
     QR_DISPATCHER_URL,
     QR_RANDKEY_URL,
     QR_SCAN_LOGIN_URL,
@@ -314,6 +318,60 @@ def _display_qr_in_terminal(data: str) -> bool:
     return True
 
 
+def _open_image_file(path: str) -> None:
+    """Open an image file with the system default viewer."""
+    system = platform.system()
+    try:
+        if system == "Darwin":
+            subprocess.Popen(["open", path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        elif system == "Windows":
+            os.startfile(path)  # type: ignore[attr-defined]
+        else:
+            subprocess.Popen(["xdg-open", path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except OSError as exc:
+        logger.debug("Failed to open QR image: %s", exc)
+
+
+async def _fetch_and_display_qr(client: httpx.AsyncClient, qr_id: str) -> None:
+    """Fetch the QR code image from Boss API and display it.
+
+    The server-generated QR image contains the correct scannable content
+    that the Boss Zhipin APP can recognise. We save it to a temp file and
+    open it with the system image viewer, plus render it in the terminal
+    as a fallback.
+    """
+    # Fetch QR image from API
+    resp = await client.get(QR_CODE_URL, params={"content": qr_id})
+    resp.raise_for_status()
+
+    # Save to temp file
+    tmp = tempfile.NamedTemporaryFile(suffix=".png", prefix="boss_qr_", delete=False)
+    tmp.write(resp.content)
+    tmp.close()
+    logger.debug("QR image saved to %s", tmp.name)
+
+    # Try to open with system viewer
+    _open_image_file(tmp.name)
+    print(f"  📁 二维码图片已保存到: {tmp.name}")
+
+    # Also try terminal rendering — decode the image to find the encoded content
+    try:
+        from PIL import Image
+        from pyzbar.pyzbar import decode as zbar_decode
+
+        img = Image.open(tmp.name)
+        decoded = zbar_decode(img)
+        if decoded:
+            qr_content = decoded[0].data.decode("utf-8")
+            logger.debug("Decoded QR content: %s", qr_content)
+            _display_qr_in_terminal(qr_content)
+    except ImportError:
+        # pyzbar / Pillow not installed — terminal QR not available, image viewer is enough
+        logger.debug("pyzbar/Pillow not installed, skipping terminal QR rendering")
+    except Exception as exc:
+        logger.debug("Failed to decode QR image for terminal display: %s", exc)
+
+
 # ── QR Login flow ───────────────────────────────────────────────────
 
 async def _get_qr_session(client: httpx.AsyncClient) -> dict[str, str]:
@@ -409,9 +467,9 @@ async def qr_login() -> Credential:
         session = await _get_qr_session(client)
         qr_id = session["qrId"]
 
-        # Step 2: Display QR code in terminal using Unicode half-blocks
+        # Step 2: Fetch QR image from API and display
         print("\n📱 请使用 Boss 直聘 APP 扫描以下二维码登录:\n")
-        _display_qr_in_terminal(qr_id)
+        await _fetch_and_display_qr(client, qr_id)
         print("\n⏳ 扫码后请在手机上确认登录...")
         print(f"   (QR ID: {qr_id[:20]}...)\n")
 

@@ -20,7 +20,7 @@ A CLI for BOSS 直聘 — search jobs, view recommendations, manage applications
 ## Features
 
 - 🔐 **Auth** — auto-extract browser cookies (10+ browsers), QR code login, `--cookie-source` explicit browser selection
-- 🔍 **Search** — jobs by keyword with city/salary/experience/degree filters
+- 🔍 **Search** — jobs by keyword with city/salary/experience/degree/industry/scale/stage/job-type filters
 - ⭐ **Recommendations** — personalized job recommendations based on profile
 - 📋 **Detail & Export** — view full job details, short-index navigation (`boss show 3`), CSV/JSON export
 - 📜 **History** — browse job viewing history
@@ -76,6 +76,10 @@ boss search "Python" --city 杭州       # Filter by city
 boss search "Java" --salary 20-30K     # Filter by salary
 boss search "前端" --exp 3-5年          # Filter by experience
 boss search "AI" --degree 硕士         # Filter by degree
+boss search "后端" --industry 互联网    # Filter by industry
+boss search "产品" --scale 1000-9999人  # Filter by company size
+boss search "数据" --stage 已上市       # Filter by funding stage
+boss search "运维" --job-type 全职      # Filter by job type
 boss search "后端" --city 深圳 -p 2    # Pagination
 
 # ─── Detail & Export ──────────────────────────────
@@ -221,7 +225,7 @@ Check your city filter. Some keywords are city-specific. Use `boss cities` to se
 ## 功能特性
 
 - 🔐 **认证** — 自动提取浏览器 Cookie（10+ 浏览器），二维码扫码登录，`--cookie-source` 指定浏览器
-- 🔍 **搜索** — 按关键词搜索职位，支持城市/薪资/经验/学历筛选
+- 🔍 **搜索** — 按关键词搜索职位，支持城市/薪资/经验/学历/行业/规模/融资阶段/职位类型筛选
 - ⭐ **推荐** — 基于求职期望的个性化推荐
 - 📋 **详情 & 导出** — 职位详情，编号导航 (`boss show 3`)，CSV/JSON 导出
 - 📜 **历史** — 查看浏览历史
@@ -244,6 +248,8 @@ boss logout                            # 清除 Cookie
 
 # 搜索 & 详情
 boss search "golang" --city 杭州       # 按城市搜索
+boss search "AI" --industry 互联网 --scale 1000-9999人  # 行业+规模
+boss search "数据" --stage 已上市 --salary 30-50K       # 融资+薪资
 boss show 3                            # 按编号查看详情
 boss detail <securityId> --json        # 指定 ID 查看（JSON envelope）
 boss export "Python" -n 50 -o jobs.csv # 导出 CSV

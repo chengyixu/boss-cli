@@ -554,8 +554,78 @@ class TestSearchMock:
             assert data["ok"] is True
             assert "data" in data
 
+    def test_search_new_filter_help(self):
+        """Verify new filter options appear in search --help."""
+        result = runner.invoke(cli, ["search", "--help"])
+        assert result.exit_code == 0
+        for opt in ("--industry", "--scale", "--stage", "--job-type"):
+            assert opt in result.output, f"{opt} missing from search --help"
 
-# ── Schema envelope test ────────────────────────────────────────────
+    def test_search_mock_with_filters(self):
+        """Verify new filter params are forwarded to client.search_jobs()."""
+        mock_cred = MagicMock()
+        mock_cred.cookies = {"wt2": "x"}
+
+        mock_data = {"jobList": [{"jobName": "Eng", "securityId": "x"}], "hasMore": False}
+
+        with patch("boss_cli.commands._common.get_credential", return_value=mock_cred), \
+             patch("boss_cli.commands._common.BossClient") as MockClient:
+            mock_instance = MagicMock()
+            mock_instance.search_jobs.return_value = mock_data
+            mock_instance.__enter__ = MagicMock(return_value=mock_instance)
+            mock_instance.__exit__ = MagicMock(return_value=False)
+            MockClient.return_value = mock_instance
+
+            result = runner.invoke(cli, [
+                "search", "Python", "--json",
+                "--industry", "互联网",
+                "--scale", "1000-9999人",
+                "--stage", "已上市",
+                "--job-type", "全职",
+            ])
+            assert result.exit_code == 0
+            # Verify the call was made with the new params
+            call_kwargs = mock_instance.search_jobs.call_args
+            assert call_kwargs.kwargs.get("industry") == "100020"
+            assert call_kwargs.kwargs.get("scale") == "305"
+            assert call_kwargs.kwargs.get("stage") == "807"
+            assert call_kwargs.kwargs.get("job_type") == "1901"
+
+    def test_export_new_filter_help(self):
+        """Verify new filter options appear in export --help."""
+        result = runner.invoke(cli, ["export", "--help"])
+        assert result.exit_code == 0
+        for opt in ("--industry", "--scale", "--stage", "--job-type"):
+            assert opt in result.output, f"{opt} missing from export --help"
+
+
+# ── Constants test ──────────────────────────────────────────────────
+
+
+class TestNewConstants:
+    """Test that new filter code mappings are correct."""
+
+    def test_industry_codes_present(self):
+        from boss_cli.constants import INDUSTRY_CODES
+        assert len(INDUSTRY_CODES) >= 10
+        assert "互联网" in INDUSTRY_CODES
+        assert "人工智能" in INDUSTRY_CODES
+
+    def test_scale_codes_present(self):
+        from boss_cli.constants import SCALE_CODES
+        assert len(SCALE_CODES) >= 6
+        assert "1000-9999人" in SCALE_CODES
+
+    def test_stage_codes_present(self):
+        from boss_cli.constants import STAGE_CODES
+        assert len(STAGE_CODES) >= 8
+        assert "已上市" in STAGE_CODES
+        assert "A轮" in STAGE_CODES
+
+    def test_job_type_codes_present(self):
+        from boss_cli.constants import JOB_TYPE_CODES
+        assert len(JOB_TYPE_CODES) >= 3
+        assert "全职" in JOB_TYPE_CODES
 
 
 class TestSchemaEnvelope:

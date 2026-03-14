@@ -126,6 +126,10 @@ Payloads live under `.data`.
 | Salary | `--salary` | 3K以下, 3-5K, 5-10K, 10-15K, 15-20K, 20-30K, 30-50K, 50K以上 |
 | Experience | `--exp` | 不限, 在校/应届, 1年以内, 1-3年, 3-5年, 5-10年, 10年以上 |
 | Degree | `--degree` | 不限, 大专, 本科, 硕士, 博士 |
+| Industry | `--industry` | 互联网, 电子商务, 游戏, 人工智能, 金融, 教育培训, 医疗健康, etc. |
+| Company Scale | `--scale` | 0-20人, 20-99人, 100-499人, 500-999人, 1000-9999人, 10000人以上 |
+| Funding Stage | `--stage` | 未融资, 天使轮, A轮, B轮, C轮, D轮及以上, 已上市, 不需要融资 |
+| Job Type | `--job-type` | 全职, 兼职, 实习 |
 
 ## Agent Workflow Examples
 

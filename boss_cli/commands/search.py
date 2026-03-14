@@ -12,7 +12,7 @@ from rich.panel import Panel
 from rich.table import Table
 
 from ..client import BossClient, list_cities, resolve_city
-from ..constants import DEGREE_CODES, EXP_CODES, SALARY_CODES
+from ..constants import DEGREE_CODES, EXP_CODES, INDUSTRY_CODES, JOB_TYPE_CODES, SALARY_CODES, SCALE_CODES, STAGE_CODES
 from ..exceptions import BossApiError
 from ..index_cache import get_index_info, get_job_by_index, save_index
 from ._common import (
@@ -83,20 +83,35 @@ def _render_job_table(
 @click.option("--salary", type=click.Choice(list(SALARY_CODES.keys())), help="薪资筛选")
 @click.option("--exp", type=click.Choice(list(EXP_CODES.keys())), help="工作经验筛选")
 @click.option("--degree", type=click.Choice(list(DEGREE_CODES.keys())), help="学历筛选")
+@click.option("--industry", type=click.Choice(list(INDUSTRY_CODES.keys())), help="行业筛选 (如: 互联网, 金融)")
+@click.option("--scale", type=click.Choice(list(SCALE_CODES.keys())), help="公司规模筛选 (如: 1000-9999人)")
+@click.option("--stage", type=click.Choice(list(STAGE_CODES.keys())), help="融资阶段筛选 (如: A轮, 已上市)")
+@click.option("--job-type", type=click.Choice(list(JOB_TYPE_CODES.keys())), help="职位类型 (全职/兼职/实习)")
 @structured_output_options
-def search(keyword: str, city: str, page: int, salary: str | None, exp: str | None, degree: str | None, as_json: bool, as_yaml: bool) -> None:
-    """搜索职位 (例: boss search Python --city 北京)"""
+def search(
+    keyword: str, city: str, page: int,
+    salary: str | None, exp: str | None, degree: str | None,
+    industry: str | None, scale: str | None, stage: str | None, job_type: str | None,
+    as_json: bool, as_yaml: bool,
+) -> None:
+    """搜索职位 (例: boss search Python --city 北京 --industry 互联网)"""
     cred = require_auth()
 
     city_code = resolve_city(city)
     salary_code = SALARY_CODES.get(salary) if salary else None
     exp_code = EXP_CODES.get(exp) if exp else None
     degree_code = DEGREE_CODES.get(degree) if degree else None
+    industry_code = INDUSTRY_CODES.get(industry) if industry else None
+    scale_code = SCALE_CODES.get(scale) if scale else None
+    stage_code = STAGE_CODES.get(stage) if stage else None
+    job_type_code = JOB_TYPE_CODES.get(job_type) if job_type else None
 
     def _action(c: BossClient) -> dict:
         return c.search_jobs(
             query=keyword, city=city_code, page=page,
             experience=exp_code, degree=degree_code, salary=salary_code,
+            industry=industry_code, scale=scale_code, stage=stage_code,
+            job_type=job_type_code,
         )
 
     def _render(data: dict) -> None:
@@ -106,12 +121,9 @@ def search(keyword: str, city: str, page: int, salary: str | None, exp: str | No
             save_index(job_list, source=f"search:{keyword}")
 
         filters = [city]
-        if salary:
-            filters.append(salary)
-        if exp:
-            filters.append(exp)
-        if degree:
-            filters.append(degree)
+        for f in (salary, exp, degree, industry, scale, stage, job_type):
+            if f:
+                filters.append(f)
         filter_str = " · ".join(filters)
 
         _render_job_table(
@@ -260,9 +272,18 @@ def _render_detail(data: dict) -> None:
 @click.option("--salary", type=click.Choice(list(SALARY_CODES.keys())), help="薪资筛选")
 @click.option("--exp", type=click.Choice(list(EXP_CODES.keys())), help="工作经验筛选")
 @click.option("--degree", type=click.Choice(list(DEGREE_CODES.keys())), help="学历筛选")
+@click.option("--industry", type=click.Choice(list(INDUSTRY_CODES.keys())), help="行业筛选")
+@click.option("--scale", type=click.Choice(list(SCALE_CODES.keys())), help="公司规模筛选")
+@click.option("--stage", type=click.Choice(list(STAGE_CODES.keys())), help="融资阶段筛选")
+@click.option("--job-type", type=click.Choice(list(JOB_TYPE_CODES.keys())), help="职位类型")
 @click.option("-o", "--output", "output_file", default=None, help="输出文件路径 (默认: stdout)")
 @click.option("--format", "fmt", type=click.Choice(["csv", "json"]), default="csv", help="输出格式")
-def export(keyword: str, city: str, count: int, salary: str | None, exp: str | None, degree: str | None, output_file: str | None, fmt: str) -> None:
+def export(
+    keyword: str, city: str, count: int,
+    salary: str | None, exp: str | None, degree: str | None,
+    industry: str | None, scale: str | None, stage: str | None, job_type: str | None,
+    output_file: str | None, fmt: str,
+) -> None:
     """导出搜索结果为 CSV 或 JSON
 
     例: boss export "golang" --city 杭州 -n 50 -o jobs.csv
@@ -273,6 +294,10 @@ def export(keyword: str, city: str, count: int, salary: str | None, exp: str | N
     salary_code = SALARY_CODES.get(salary) if salary else None
     exp_code = EXP_CODES.get(exp) if exp else None
     degree_code = DEGREE_CODES.get(degree) if degree else None
+    industry_code = INDUSTRY_CODES.get(industry) if industry else None
+    scale_code = SCALE_CODES.get(scale) if scale else None
+    stage_code = STAGE_CODES.get(stage) if stage else None
+    job_type_code = JOB_TYPE_CODES.get(job_type) if job_type else None
 
     all_jobs: list[dict] = []
     pages_needed = (count + 14) // 15  # 15 per page
@@ -284,6 +309,8 @@ def export(keyword: str, city: str, count: int, salary: str | None, exp: str | N
                 data = c.search_jobs(
                     query=keyword, city=city_code, page=pg,
                     experience=exp_code, degree=degree_code, salary=salary_code,
+                    industry=industry_code, scale=scale_code, stage=stage_code,
+                    job_type=job_type_code,
                 )
                 job_list = data.get("jobList", [])
                 all_jobs.extend(job_list)

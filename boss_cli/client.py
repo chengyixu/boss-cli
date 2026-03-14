@@ -233,6 +233,10 @@ class BossClient:
         experience: str | None = None,
         degree: str | None = None,
         salary: str | None = None,
+        industry: str | None = None,
+        scale: str | None = None,
+        stage: str | None = None,
+        job_type: str | None = None,
     ) -> dict[str, Any]:
         """Search jobs."""
         params: dict[str, Any] = {
@@ -247,6 +251,14 @@ class BossClient:
             params["degree"] = degree
         if salary:
             params["salary"] = salary
+        if industry:
+            params["industry"] = industry
+        if scale:
+            params["scale"] = scale
+        if stage:
+            params["stage"] = stage
+        if job_type:
+            params["jobType"] = job_type
         return self._get(JOB_SEARCH_URL, params=params, action="搜索职位")
 
     def get_recommend_jobs(self, page: int = 1) -> dict[str, Any]:

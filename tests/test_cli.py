@@ -145,7 +145,7 @@ class TestPersonalCommands:
             "degreeCategory": "本科", "account": "138****1234",
         }
 
-        with patch("boss_cli.auth.get_credential", return_value=mock_cred), \
+        with patch("boss_cli.commands._common.get_credential", return_value=mock_cred), \
              patch("boss_cli.commands._common.BossClient") as MockClient:
             mock_instance = MagicMock()
             mock_instance.get_resume_baseinfo.return_value = mock_data
@@ -164,7 +164,7 @@ class TestPersonalCommands:
 
         mock_data = {"name": "张三", "gender": 1, "age": "25岁"}
 
-        with patch("boss_cli.auth.get_credential", return_value=mock_cred), \
+        with patch("boss_cli.commands._common.get_credential", return_value=mock_cred), \
              patch("boss_cli.commands._common.BossClient") as MockClient:
             mock_instance = MagicMock()
             mock_instance.get_resume_baseinfo.return_value = mock_data

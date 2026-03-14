@@ -483,6 +483,20 @@ class TestClient:
             headers = client._headers_for_request("/wapi/zpgeek/search/joblist.json", params={"query": "Python"})
             assert headers["Referer"].endswith("/web/geek/job?query=Python")
 
+    def test_search_chinese_keyword_encoded_in_referer(self):
+        """Verify Chinese keywords are percent-encoded in Referer to avoid ASCII errors."""
+        from boss_cli.auth import Credential
+        from boss_cli.client import BossClient
+
+        cred = Credential(cookies={"__zp_stoken__": "s", "wt2": "1", "wbg": "2", "zp_at": "3"})
+        with BossClient(cred) as client:
+            headers = client._headers_for_request("/wapi/zpgeek/search/joblist.json", params={"query": "前端开发"})
+            referer = headers["Referer"]
+            # Must not contain raw Chinese characters
+            assert "前端开发" not in referer
+            # Must contain percent-encoded form
+            assert "query=%E5%89%8D%E7%AB%AF%E5%BC%80%E5%8F%91" in referer
+
     def test_recommend_request_uses_recommend_referer(self):
         from boss_cli.auth import Credential
         from boss_cli.client import BossClient

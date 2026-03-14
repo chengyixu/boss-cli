@@ -2,7 +2,7 @@
 name: boss-cli
 description: Use boss-cli for ALL BOSS 直聘 operations — searching jobs, viewing recommendations, managing applications, chatting with recruiters, and batch greeting. Invoke whenever the user requests any job search or recruitment platform interaction on BOSS 直聘.
 author: jackwener
-version: "0.2.0"
+version: "0.3.0"
 tags:
   - boss
   - zhipin

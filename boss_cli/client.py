@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import random
 import time
+from collections import deque
 from typing import Any
 
 import httpx
@@ -27,6 +28,10 @@ from .constants import (
     RESUME_EXPECT_URL,
     RESUME_STATUS_URL,
     USER_INFO_URL,
+    WEB_GEEK_CHAT_URL,
+    WEB_GEEK_HISTORY_URL,
+    WEB_GEEK_JOB_URL,
+    WEB_GEEK_RECOMMEND_URL,
 )
 from .exceptions import BossApiError, ParamError, RateLimitError, SessionExpiredError
 
@@ -59,6 +64,7 @@ class BossClient:
         self._last_request_time = 0.0
         self._request_count = 0
         self._rate_limit_count = 0
+        self._recent_request_times: deque[float] = deque(maxlen=12)
         self._http: httpx.Client | None = None
 
     def _build_client(self) -> httpx.Client:
@@ -105,9 +111,31 @@ class BossClient:
             logger.debug("Rate-limit delay: %.2fs", sleep_time)
             time.sleep(sleep_time)
 
+        burst_penalty = self._burst_penalty_delay()
+        if burst_penalty > 0:
+            logger.debug("Burst penalty delay: %.2fs", burst_penalty)
+            time.sleep(burst_penalty)
+
+    def _burst_penalty_delay(self) -> float:
+        """Add extra delay when a burst pattern looks less like human browsing."""
+        if not self._recent_request_times:
+            return 0.0
+
+        now = time.time()
+        recent_15s = sum(1 for ts in self._recent_request_times if now - ts <= 15)
+        recent_45s = sum(1 for ts in self._recent_request_times if now - ts <= 45)
+
+        if recent_45s >= 6:
+            return random.uniform(4.0, 7.0)
+        if recent_15s >= 3:
+            return random.uniform(1.2, 2.8)
+        return 0.0
+
     def _mark_request(self) -> None:
-        self._last_request_time = time.time()
+        now = time.time()
+        self._last_request_time = now
         self._request_count += 1
+        self._recent_request_times.append(now)
 
     @property
     def request_stats(self) -> dict[str, int | float]:
@@ -124,6 +152,24 @@ class BossClient:
         for name, value in resp.cookies.items():
             if value:
                 self.client.cookies.set(name, value)
+
+    def _headers_for_request(self, url: str, params: dict[str, Any] | None = None) -> dict[str, str]:
+        """Build browser-like headers, including endpoint-specific Referer."""
+        headers = dict(HEADERS)
+        if url == JOB_SEARCH_URL:
+            query = ""
+            if params and params.get("query"):
+                query = f"?query={params['query']}"
+            headers["Referer"] = f"{WEB_GEEK_JOB_URL}{query}"
+        elif url == JOB_RECOMMEND_URL:
+            headers["Referer"] = WEB_GEEK_RECOMMEND_URL
+        elif url in (JOB_CARD_URL, JOB_DETAIL_URL):
+            headers["Referer"] = WEB_GEEK_JOB_URL
+        elif url == JOB_HISTORY_URL:
+            headers["Referer"] = WEB_GEEK_HISTORY_URL
+        elif url in (FRIEND_LIST_URL, FRIEND_ADD_URL):
+            headers["Referer"] = WEB_GEEK_CHAT_URL
+        return headers
 
     def _handle_response(self, data: dict[str, Any], action: str) -> dict[str, Any]:
         """Validate API response and return zpData, raise typed exceptions."""
@@ -158,11 +204,16 @@ class BossClient:
         """Execute HTTP request with rate-limit delay, retry, and cookie merge."""
         self._rate_limit_delay()
         last_exc: Exception | None = None
+        params = kwargs.get("params")
+        merged_headers = self._headers_for_request(url, params=params)
+        request_headers = kwargs.pop("headers", None)
+        if request_headers:
+            merged_headers.update(request_headers)
 
         for attempt in range(self._max_retries):
             t0 = time.time()
             try:
-                resp = self.client.request(method, url, **kwargs)
+                resp = self.client.request(method, url, headers=merged_headers, **kwargs)
                 elapsed = time.time() - t0
                 self._merge_response_cookies(resp)
                 self._mark_request()

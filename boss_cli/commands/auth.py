@@ -23,30 +23,45 @@ logger = logging.getLogger(__name__)
 @click.option("--cookie-source", default=None, help="指定浏览器 (chrome/firefox/edge/brave/arc/safari等)")
 def login(qrcode: bool, cookie_source: str | None) -> None:
     """扫码登录 Boss 直聘 APP"""
+    from ..auth import clear_credential, verify_credential
+
+    def _finalize_login(cred) -> None:
+        authenticated, message = verify_credential(cred)
+        if authenticated:
+            console.print(f"[green]✅ 登录成功！[/green] ({len(cred.cookies)} cookies)")
+            return
+        clear_credential()
+        console.print("[red]❌ 登录失败：凭证未通过实际接口校验[/red]")
+        if message:
+            console.print(f"[dim]{message}[/dim]")
+        raise SystemExit(1)
+
     if qrcode:
         from ..auth import qr_login
         import asyncio
         try:
-            asyncio.run(qr_login())
+            cred = asyncio.run(qr_login())
         except RuntimeError as e:
             console.print(f"[red]❌ {e}[/red]")
             raise SystemExit(1) from None
+        _finalize_login(cred)
     else:
         from ..auth import extract_browser_credential
         # Try browser cookies first
         cred = extract_browser_credential(cookie_source=cookie_source)
         if cred:
-            console.print(f"[green]✅ 登录成功！[/green] ({len(cred.cookies)} cookies)")
+            _finalize_login(cred)
         else:
             # Fallback to QR login
             console.print("[yellow]未找到浏览器 Cookie，尝试二维码登录...[/yellow]")
             from ..auth import qr_login
             import asyncio
             try:
-                asyncio.run(qr_login())
+                cred = asyncio.run(qr_login())
             except RuntimeError as e:
                 console.print(f"[red]❌ {e}[/red]")
                 raise SystemExit(1) from None
+            _finalize_login(cred)
 
 
 @click.command()
@@ -61,15 +76,19 @@ def logout() -> None:
 @structured_output_options
 def status(as_json: bool, as_yaml: bool) -> None:
     """查看当前登录状态"""
-    from ..auth import get_credential
+    from ..auth import get_credential, verify_credential
     cred = get_credential()
     if cred:
         cookie_names = sorted(cred.cookies.keys())
+        authenticated, message = verify_credential(cred)
         data = {
-            "authenticated": True,
+            "authenticated": authenticated,
+            "credential_present": True,
             "cookie_count": len(cred.cookies),
             "cookies": cookie_names,
         }
+        if not authenticated and message:
+            data["reason"] = message
         if as_json:
             click.echo(json.dumps(data, indent=2, ensure_ascii=False))
         elif as_yaml:
@@ -82,11 +101,17 @@ def status(as_json: bool, as_yaml: bool) -> None:
             n = len(cred.cookies)
             keys = ", ".join(cookie_names[:5])
             extra = f" (+{n - 5} more)" if n > 5 else ""
-            console.print(f"[green]✅ 已登录[/green] ({n} cookies)")
-            console.print(f"  [dim]{keys}{extra}[/dim]")
+            if authenticated:
+                console.print(f"[green]✅ 已登录[/green] ({n} cookies)")
+                console.print(f"  [dim]{keys}{extra}[/dim]")
+            else:
+                console.print(f"[yellow]⚠️  本地存在凭证，但登录态无效[/yellow] ({n} cookies)")
+                console.print(f"  [dim]{keys}{extra}[/dim]")
+                if message:
+                    console.print(f"  [dim]{message}[/dim]")
     else:
         if as_json:
-            click.echo(json.dumps({"authenticated": False}))
+            click.echo(json.dumps({"authenticated": False, "credential_present": False}))
         else:
             console.print("[yellow]⚠️  未登录[/yellow]，使用 [bold]boss login[/bold] 扫码登录")
 

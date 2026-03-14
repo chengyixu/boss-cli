@@ -102,20 +102,35 @@ class TestAuthCommands:
 
     def test_status_with_auth(self):
         mock_cred = MagicMock()
-        mock_cred.cookies = {"a": "1", "b": "2"}
-        with patch("boss_cli.auth.get_credential", return_value=mock_cred):
+        mock_cred.cookies = {"__zp_stoken__": "s", "wt2": "1", "wbg": "2", "zp_at": "3"}
+        with patch("boss_cli.auth.get_credential", return_value=mock_cred), \
+             patch("boss_cli.auth.verify_credential", return_value=(True, None)):
             result = runner.invoke(cli, ["status"])
             assert result.exit_code == 0
             assert "已登录" in result.output
 
     def test_status_json(self):
         mock_cred = MagicMock()
-        mock_cred.cookies = {"a": "1"}
-        with patch("boss_cli.auth.get_credential", return_value=mock_cred):
+        mock_cred.cookies = {"__zp_stoken__": "s", "wt2": "1", "wbg": "2", "zp_at": "3"}
+        with patch("boss_cli.auth.get_credential", return_value=mock_cred), \
+             patch("boss_cli.auth.verify_credential", return_value=(True, None)):
             result = runner.invoke(cli, ["status", "--json"])
             assert result.exit_code == 0
             data = json.loads(result.output)
             assert data["authenticated"] is True
+            assert data["credential_present"] is True
+
+    def test_status_with_invalid_saved_auth(self):
+        mock_cred = MagicMock()
+        mock_cred.cookies = {"wt2": "1", "wbg": "2", "zp_at": "3"}
+        with patch("boss_cli.auth.get_credential", return_value=mock_cred), \
+             patch("boss_cli.auth.verify_credential", return_value=(False, "缺少关键 Cookie: __zp_stoken__")):
+            result = runner.invoke(cli, ["status", "--json"])
+            assert result.exit_code == 0
+            data = json.loads(result.output)
+            assert data["authenticated"] is False
+            assert data["credential_present"] is True
+            assert "__zp_stoken__" in data["reason"]
 
     def test_me_without_auth(self):
         with patch("boss_cli.commands._common.get_credential", return_value=None):
@@ -276,6 +291,8 @@ class TestCredential:
         cred = Credential(cookies={"foo": "bar", "baz": "qux"})
         assert cred.is_valid
         assert cred.cookies == {"foo": "bar", "baz": "qux"}
+        assert cred.has_required_cookies is False
+        assert "__zp_stoken__" in cred.missing_required_cookies
 
     def test_credential_empty(self):
         from boss_cli.auth import Credential
@@ -412,6 +429,36 @@ class TestClient:
             data = {"code": 999, "message": "unknown"}
             with pytest.raises(BossApiError):
                 client._handle_response(data, "test")
+
+    def test_search_request_uses_search_referer(self):
+        from boss_cli.auth import Credential
+        from boss_cli.client import BossClient
+
+        cred = Credential(cookies={"__zp_stoken__": "s", "wt2": "1", "wbg": "2", "zp_at": "3"})
+        with BossClient(cred) as client:
+            headers = client._headers_for_request("/wapi/zpgeek/search/joblist.json", params={"query": "Python"})
+            assert headers["Referer"].endswith("/web/geek/job?query=Python")
+
+    def test_recommend_request_uses_recommend_referer(self):
+        from boss_cli.auth import Credential
+        from boss_cli.client import BossClient
+
+        cred = Credential(cookies={"__zp_stoken__": "s", "wt2": "1", "wbg": "2", "zp_at": "3"})
+        with BossClient(cred) as client:
+            headers = client._headers_for_request("/wapi/zpgeek/pc/recommend/job/list.json")
+            assert headers["Referer"].endswith("/web/geek/recommend")
+
+    def test_burst_penalty_kicks_in_after_multiple_requests(self, monkeypatch):
+        from boss_cli.auth import Credential
+        from boss_cli.client import BossClient
+
+        cred = Credential(cookies={"__zp_stoken__": "s", "wt2": "1", "wbg": "2", "zp_at": "3"})
+        with BossClient(cred) as client:
+            now = 1000.0
+            client._recent_request_times.extend([now - 12, now - 8, now - 3])
+            monkeypatch.setattr("boss_cli.client.time.time", lambda: now)
+            delay = client._burst_penalty_delay()
+            assert delay >= 1.2
 
 
 # ── Index Cache ─────────────────────────────────────────────────────
@@ -634,8 +681,9 @@ class TestSchemaEnvelope:
     def test_status_json_has_no_envelope(self):
         """status uses direct output, not envelope (for backward compat)."""
         mock_cred = MagicMock()
-        mock_cred.cookies = {"a": "1"}
-        with patch("boss_cli.auth.get_credential", return_value=mock_cred):
+        mock_cred.cookies = {"__zp_stoken__": "s", "wt2": "1", "wbg": "2", "zp_at": "3"}
+        with patch("boss_cli.auth.get_credential", return_value=mock_cred), \
+             patch("boss_cli.auth.verify_credential", return_value=(True, None)):
             result = runner.invoke(cli, ["status", "--json"])
             assert result.exit_code == 0
             data = json.loads(result.output)
@@ -663,3 +711,29 @@ class TestSchemaEnvelope:
             assert data["schema_version"] == "1"
             assert data["data"]["name"] == "张三"
 
+
+class TestCommandFailures:
+    """API failures should return non-zero exit codes."""
+
+    def test_search_session_expired_exits_nonzero(self):
+        from boss_cli.exceptions import SessionExpiredError
+
+        mock_cred = MagicMock()
+        mock_cred.cookies = {"__zp_stoken__": "s", "wt2": "1", "wbg": "2", "zp_at": "3"}
+
+        with patch("boss_cli.commands._common.get_credential", return_value=mock_cred), \
+             patch("boss_cli.commands._common.BossClient") as MockClient, \
+             patch("boss_cli.auth.extract_browser_credential", return_value=None), \
+             patch("boss_cli.auth.clear_credential") as clear_credential:
+            mock_instance = MagicMock()
+            mock_instance.search_jobs.side_effect = SessionExpiredError()
+            mock_instance.__enter__ = MagicMock(return_value=mock_instance)
+            mock_instance.__exit__ = MagicMock(return_value=False)
+            MockClient.return_value = mock_instance
+
+            result = runner.invoke(cli, ["search", "golang", "--json"])
+            assert result.exit_code == 1
+            data = json.loads(result.output)
+            assert data["ok"] is False
+            assert data["error"]["code"] == "not_authenticated"
+            clear_credential.assert_called_once()

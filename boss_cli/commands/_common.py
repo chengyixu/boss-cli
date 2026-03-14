@@ -49,11 +49,12 @@ def run_client_action(credential: Credential, action: Callable[[BossClient], T])
             return action(client)
     except SessionExpiredError:
         # Try refreshing from browser
-        from ..auth import extract_browser_credential
+        from ..auth import clear_credential, extract_browser_credential
         fresh = extract_browser_credential()
         if fresh:
             with get_client(fresh) as client:
                 return action(client)
+        clear_credential()
         raise
 
 
@@ -112,7 +113,7 @@ def handle_command(
 
     except BossApiError as exc:
         _print_error(exc, as_json=as_json, as_yaml=as_yaml)
-        return None
+        raise SystemExit(1) from None
 
 
 def handle_errors(fn: Callable[[], T]) -> T | None:
@@ -121,7 +122,7 @@ def handle_errors(fn: Callable[[], T]) -> T | None:
         return fn()
     except BossApiError as exc:
         _print_error(exc)
-        return None
+        raise SystemExit(1) from None
 
 
 def _print_error(exc: BossApiError, *, as_json: bool = False, as_yaml: bool = False) -> None:

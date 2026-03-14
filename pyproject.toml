@@ -1,6 +1,6 @@
 [project]
 name = "kabi-boss-cli"
-version = "0.3.1"
+version = "0.3.2"
 description = "A CLI for Boss Zhipin (BOSS直聘) — search jobs, chat with bosses from the terminal"
 readme = "README.md"
 license = "Apache-2.0"

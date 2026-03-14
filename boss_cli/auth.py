@@ -24,6 +24,7 @@ from boss_cli.constants import (
     CONFIG_DIR,
     CREDENTIAL_FILE,
     HEADERS,
+    REQUIRED_COOKIES,
     QR_DISPATCHER_URL,
     QR_RANDKEY_URL,
     QR_SCAN_LOGIN_URL,
@@ -51,6 +52,14 @@ class Credential:
     @property
     def is_valid(self) -> bool:
         return bool(self.cookies)
+
+    @property
+    def missing_required_cookies(self) -> list[str]:
+        return sorted(REQUIRED_COOKIES - set(self.cookies))
+
+    @property
+    def has_required_cookies(self) -> bool:
+        return not self.missing_required_cookies
 
     def to_dict(self) -> dict[str, Any]:
         return {"cookies": self.cookies, "saved_at": time.time()}
@@ -85,6 +94,13 @@ def load_credential() -> Credential | None:
         data = json.loads(CREDENTIAL_FILE.read_text(encoding="utf-8"))
         cred = Credential.from_dict(data)
         if not cred.is_valid:
+            return None
+        if not cred.has_required_cookies:
+            logger.warning(
+                "Saved credential missing required cookies: %s",
+                ", ".join(cred.missing_required_cookies),
+            )
+            clear_credential()
             return None
 
         # Check TTL — auto-refresh if stale
@@ -200,8 +216,15 @@ print(json.dumps({"error": "no_cookies"}))
 
         cookies = data["cookies"]
         browser_name = data["browser"]
-        logger.info("Found cookies in %s (%d cookies)", browser_name, len(cookies))
         cred = Credential(cookies=cookies)
+        if not cred.has_required_cookies:
+            logger.warning(
+                "Ignoring %s cookies missing required keys: %s",
+                browser_name,
+                ", ".join(cred.missing_required_cookies),
+            )
+            return None
+        logger.info("Found cookies in %s (%d cookies)", browser_name, len(cookies))
         save_credential(cred)
         return cred
 
@@ -337,10 +360,30 @@ async def _dispatch_login(client: httpx.AsyncClient, qr_id: str) -> Credential:
     for name, value in client.cookies.items():
         cookies[name] = value
 
+    # QR dispatcher can complete before the web session is fully hydrated.
+    # Visit the site once to collect any additional auth cookies such as __zp_stoken__.
+    try:
+        warmup = await client.get("/", timeout=15)
+        warmup.raise_for_status()
+        for name, value in warmup.cookies.items():
+            cookies[name] = value
+        for name, value in client.cookies.items():
+            cookies[name] = value
+    except httpx.HTTPError as exc:
+        logger.debug("QR warmup request failed: %s", exc)
+
     if not cookies:
         raise RuntimeError("Login dispatcher returned no cookies")
 
-    return Credential(cookies=cookies)
+    credential = Credential(cookies=cookies)
+    if not credential.has_required_cookies:
+        missing = ", ".join(credential.missing_required_cookies)
+        raise RuntimeError(
+            "二维码登录未拿到完整的 Web 登录态，缺少关键 Cookie: "
+            f"{missing}。请先在浏览器完成登录后重新运行 boss login。"
+        )
+
+    return credential
 
 
 async def qr_login() -> Credential:
@@ -416,3 +459,22 @@ def get_credential() -> Credential | None:
         return cred
 
     return None
+
+
+def verify_credential(credential: Credential) -> tuple[bool, str | None]:
+    """Verify that the credential can access an authenticated API."""
+    if not credential.has_required_cookies:
+        missing = ", ".join(credential.missing_required_cookies)
+        return False, f"缺少关键 Cookie: {missing}"
+
+    from .client import BossClient
+    from .exceptions import BossApiError, SessionExpiredError
+
+    try:
+        with BossClient(credential, request_delay=0) as client:
+            client.search_jobs(query="Python", city="100010000", page=1, page_size=1)
+        return True, None
+    except SessionExpiredError as exc:
+        return False, str(exc)
+    except BossApiError as exc:
+        return False, f"登录态校验失败: {exc}"

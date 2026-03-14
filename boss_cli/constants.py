@@ -8,6 +8,11 @@ CREDENTIAL_FILE = CONFIG_DIR / "credential.json"
 
 # ── Base URL ────────────────────────────────────────────────────────
 BASE_URL = "https://www.zhipin.com"
+WEB_GEEK_BASE_URL = f"{BASE_URL}/web/geek"
+WEB_GEEK_JOB_URL = f"{WEB_GEEK_BASE_URL}/job"
+WEB_GEEK_RECOMMEND_URL = f"{WEB_GEEK_BASE_URL}/recommend"
+WEB_GEEK_CHAT_URL = f"{WEB_GEEK_BASE_URL}/chat"
+WEB_GEEK_HISTORY_URL = f"{WEB_GEEK_BASE_URL}/history"
 
 # ── QR Login API ────────────────────────────────────────────────────
 QR_RANDKEY_URL = "/wapi/zppassport/captcha/randkey"
@@ -53,11 +58,12 @@ HEADERS = {
     "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
     "DNT": "1",
     "Priority": "u=1, i",
+    "Origin": BASE_URL,
     "Referer": f"{BASE_URL}/",
 }
 
 # ── Cookie keys required for authenticated sessions ─────────────────
-REQUIRED_COOKIES = {"wt2", "wbg"}
+REQUIRED_COOKIES = {"__zp_stoken__", "wt2", "wbg", "zp_at"}
 
 # ── City codes ──────────────────────────────────────────────────────
 CITY_CODES: dict[str, str] = {

@@ -19,7 +19,7 @@ A CLI for BOSS 直聘 — search jobs, view recommendations, manage applications
 
 ## Features
 
-- 🔐 **Auth** — auto-extract browser cookies (10+ browsers), QR code login, `--cookie-source` explicit browser selection
+- 🔐 **Auth** — auto-extract browser cookies (10+ browsers), QR code login, `--cookie-source` explicit browser selection, live validation against real search APIs
 - 🔍 **Search** — jobs by keyword with city/salary/experience/degree/industry/scale/stage/job-type filters
 - ⭐ **Recommendations** — personalized job recommendations based on profile
 - 📋 **Detail & Export** — view full job details, short-index navigation (`boss show 3`), CSV/JSON export
@@ -67,7 +67,7 @@ uv sync
 boss login                             # Auto-detect browser cookies, fallback to QR
 boss login --cookie-source chrome      # Extract from specific browser
 boss login --qrcode                    # QR code login only
-boss status                            # Check login status (shows cookie names)
+boss status                            # Check login status (validates real search session, shows cookie names)
 boss logout                            # Clear saved cookies
 
 # ─── Search ───────────────────────────────────────
@@ -137,7 +137,7 @@ boss-cli supports multiple authentication methods:
 2. **Browser cookies** — auto-detects installed browsers (Chrome, Firefox, Edge, Brave, Arc, Chromium, Opera, Vivaldi, Safari, LibreWolf)
 3. **QR code login** — terminal QR output using Unicode half-blocks, scan with Boss 直聘 APP
 
-`boss login` auto-extracts browser cookies first, falls back to QR login. Use `--cookie-source chrome` to specify a browser, or `--qrcode` to skip browser detection.
+`boss login` auto-extracts browser cookies first, falls back to QR login. Use `--cookie-source chrome` to specify a browser, or `--qrcode` to skip browser detection. The command now verifies the saved credential against a real authenticated API before reporting success.
 
 ### Cookie TTL & Auto-Refresh
 
@@ -208,9 +208,13 @@ uv run ruff check .
 
 ## Troubleshooting
 
+**Q: `boss status` says not authenticated but local cookies still exist**
+
+`boss status` now verifies the session against a real search API. If `authenticated=false`, your local credential file exists but the underlying web session is no longer usable.
+
 **Q: `环境异常 (__zp_stoken__ 已过期)`**
 
-Your session cookies have expired. Run `boss logout && boss login` to refresh.
+Your session cookies have expired. Run `boss logout && boss login` to refresh. If QR login only returns a partial cookie set, log in from a browser first and then run `boss login`.
 
 **Q: `暂无投递记录` but I have applied**
 

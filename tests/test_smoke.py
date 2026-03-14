@@ -1,19 +1,20 @@
-"""End-to-end smoke tests for boss-cli.
+"""Minimal live smoke tests for boss-cli.
 
-These tests invoke real CLI commands against the live Boss Zhipin API
-using your local saved cookies. They are **skipped by default** and
-only run when explicitly requested::
+These tests exercise a tiny set of high-signal commands against the
+live Boss Zhipin API using your local saved cookies. They are skipped
+by default and only run when explicitly requested::
 
     uv run pytest tests/test_smoke.py -v -m smoke
 
-The test account is disposable — ALL operations including writes
-(greet, batch-greet) are safe to run.
+The suite intentionally stays small to reduce anti-bot invalidation
+and keep release verification stable.
 """
 
 from __future__ import annotations
 
 import json
 import re
+import time
 
 import pytest
 from click.testing import CliRunner
@@ -23,10 +24,22 @@ from boss_cli.cli import cli
 smoke = pytest.mark.smoke
 
 runner = CliRunner()
+_LAST_INVOKE_AT = 0.0
+_SMOKE_INVOKE_DELAY_S = 1.2
+
+
+def _throttle_live_requests() -> None:
+    """Pace live API calls to reduce anti-bot invalidation during smoke tests."""
+    global _LAST_INVOKE_AT
+    elapsed = time.time() - _LAST_INVOKE_AT
+    if _LAST_INVOKE_AT and elapsed < _SMOKE_INVOKE_DELAY_S:
+        time.sleep(_SMOKE_INVOKE_DELAY_S - elapsed)
+    _LAST_INVOKE_AT = time.time()
 
 
 def _invoke(*args: str):
     """Run a CLI command and return result."""
+    _throttle_live_requests()
     return runner.invoke(cli, list(args))
 
 
@@ -42,7 +55,31 @@ def _invoke_json(*args: str):
     return result, data
 
 
-# ── Auth ────────────────────────────────────────────────────────────
+def _assert_ok_envelope(data: dict | None) -> dict:
+    """Assert the command returned the standard success envelope."""
+    assert data is not None
+    assert data["ok"] is True
+    assert "data" in data
+    return data["data"]
+
+
+@pytest.fixture(scope="module")
+def live_auth_status() -> dict | None:
+    """Fetch one shared status snapshot for the smoke session."""
+    _invoke("login")
+    result, data = _invoke_json("status")
+    assert result.exit_code == 0
+    return data
+
+
+@pytest.fixture(scope="module")
+def require_live_auth(live_auth_status: dict | None) -> None:
+    """Skip auth-dependent smoke tests unless the session is truly usable."""
+    if not live_auth_status or not live_auth_status.get("authenticated"):
+        reason = ""
+        if live_auth_status:
+            reason = live_auth_status.get("reason", "")
+        pytest.skip(f"Live auth unavailable: {reason or 'boss status 未通过'}")
 
 
 @smoke
@@ -62,160 +99,46 @@ class TestAuth:
         assert data["cookie_count"] > 0
 
 
-# ── Profile ─────────────────────────────────────────────────────────
-
-
 @smoke
+@pytest.mark.usefixtures("require_live_auth")
 class TestProfile:
-    """Test profile and personal center commands."""
-
-    def test_me(self):
-        result = _invoke("me")
-        assert result.exit_code == 0
-        # Non-TTY auto-outputs JSON, TTY shows rich panel
-        assert "个人资料" in result.output or "name" in result.output
+    """Verify profile lookup with a structured response."""
 
     def test_me_json(self):
         result, data = _invoke_json("me")
         assert result.exit_code == 0
-        assert data is not None
+        payload = _assert_ok_envelope(data)
         # Must have at least one of these fields
-        assert any(k in data for k in ("name", "nickName", "account"))
-
-    def test_me_has_basic_fields(self):
-        """Verify profile JSON has expected structure."""
-        result, data = _invoke_json("me")
-        assert result.exit_code == 0
-        if data:
-            for field in ("name", "gender"):
-                assert field in data, f"Missing field: {field}"
-
-
-# ── Applied / Interview ─────────────────────────────────────────────
-
+        assert any(k in payload for k in ("name", "nickName", "account"))
 
 @smoke
-class TestPersonalCenter:
-    """Test applied jobs and interviews."""
-
-    def test_applied(self):
-        result = _invoke("applied")
-        assert result.exit_code == 0
-        # Non-TTY auto-outputs JSON, TTY shows rich table
-        assert "已投递" in result.output or "暂无投递记录" in result.output or "cardList" in result.output
-
-    def test_applied_json(self):
-        result, data = _invoke_json("applied")
-        assert result.exit_code == 0
-        # Data may be None if API failed (stoken), but command should not crash
-
-    def test_applied_pagination(self):
-        result = _invoke("applied", "-p", "1")
-        assert result.exit_code == 0
-
-    def test_interviews(self):
-        result = _invoke("interviews")
-        assert result.exit_code == 0
-        assert "面试" in result.output or "暂无面试" in result.output or "interviewList" in result.output
-
-    def test_interviews_json(self):
-        result, data = _invoke_json("interviews")
-        assert result.exit_code == 0
-
-
-# ── Search ──────────────────────────────────────────────────────────
-
-
-@smoke
+@pytest.mark.usefixtures("require_live_auth")
 class TestSearch:
-    """Test job search commands."""
-
-    def test_search_basic(self):
-        result = _invoke("search", "Python", "--city", "全国")
-        assert result.exit_code == 0
+    """Verify job search on the live API."""
 
     def test_search_json(self):
-        result, data = _invoke_json("search", "Java")
-        assert result.exit_code == 0
-        if data is not None:
-            assert "jobList" in data
-
-    def test_search_with_city(self):
-        result = _invoke("search", "golang", "--city", "杭州")
-        assert result.exit_code == 0
-
-    def test_search_with_salary(self):
-        result = _invoke("search", "前端", "--salary", "20-30K")
-        assert result.exit_code == 0
-
-    def test_search_with_exp(self):
-        result = _invoke("search", "后端", "--exp", "3-5年")
-        assert result.exit_code == 0
-
-    def test_search_with_degree(self):
-        result = _invoke("search", "AI", "--degree", "硕士")
-        assert result.exit_code == 0
-
-    def test_search_combined_filters(self):
-        result = _invoke("search", "golang", "--city", "杭州", "--salary", "20-30K", "--exp", "3-5年")
-        assert result.exit_code == 0
-
-    def test_search_pagination(self):
-        result = _invoke("search", "Python", "-p", "2")
-        assert result.exit_code == 0
-
-    def test_search_json_structure(self):
-        """Verify search JSON response has expected fields when successful."""
         result, data = _invoke_json("search", "Python", "--city", "全国")
-        if data is not None:
-            # jobList should be a list
-            assert isinstance(data.get("jobList", []), list)
-
-
-# ── Recommend ───────────────────────────────────────────────────────
+        assert result.exit_code == 0
+        payload = _assert_ok_envelope(data)
+        assert "jobList" in payload
+        assert isinstance(payload.get("jobList", []), list)
 
 
 @smoke
+@pytest.mark.usefixtures("require_live_auth")
 class TestRecommend:
-    """Test recommendation commands."""
-
-    def test_recommend(self):
-        result = _invoke("recommend")
-        assert result.exit_code == 0
+    """Verify personalized recommendations on the live API."""
 
     def test_recommend_json(self):
         result, data = _invoke_json("recommend")
         assert result.exit_code == 0
-
-    def test_recommend_pagination(self):
-        result = _invoke("recommend", "-p", "1")
-        assert result.exit_code == 0
-
-
-# ── Chat ────────────────────────────────────────────────────────────
-
-
-@smoke
-class TestChat:
-    """Test chat/friend list commands."""
-
-    def test_chat(self):
-        result = _invoke("chat")
-        assert result.exit_code == 0
-        # Non-TTY auto-outputs JSON, TTY shows rich table
-        assert "沟通" in result.output or "暂无沟通" in result.output or result.output.strip().startswith("{")
-
-    def test_chat_json(self):
-        result, data = _invoke_json("chat")
-        assert result.exit_code == 0
-
-
-# ── Cities ──────────────────────────────────────────────────────────
+        payload = _assert_ok_envelope(data)
+        assert isinstance(payload.get("jobList", []), list)
 
 
 @smoke
 class TestCities:
-    """Test city listing."""
+    """Verify local non-network command coverage remains intact."""
 
     def test_cities(self):
         result = _invoke("cities")
@@ -229,175 +152,3 @@ class TestCities:
         result = _invoke("cities")
         # Should contain at least one city code (digits)
         assert re.search(r"\d{9}", result.output)
-
-
-# ── Greet (write operations — safe on test account) ─────────────────
-
-
-@smoke
-class TestGreet:
-    """Test greet operations.
-
-    These are write operations but safe on the test account.
-    """
-
-    def test_greet_missing_id(self):
-        """Greet without security_id should show usage error."""
-        result = _invoke("greet")
-        assert result.exit_code != 0  # Missing argument
-
-    def test_greet_invalid_id(self):
-        """Greet with an invalid security_id should get an API error, not crash."""
-        result = _invoke("greet", "invalid_test_id_12345")
-        # Should not crash — either success or API error message
-        assert result.exit_code == 0
-
-
-# ── Batch Greet ─────────────────────────────────────────────────────
-
-
-@smoke
-class TestBatchGreet:
-    """Test batch greet operations."""
-
-    def test_batch_greet_dry_run(self):
-        """Dry run should show preview without sending."""
-        result = _invoke("batch-greet", "Python", "--city", "杭州", "-n", "2", "--dry-run")
-        assert result.exit_code == 0
-        # Should show either preview table or API error
-        assert "预览" in result.output or "搜索失败" in result.output
-
-    def test_batch_greet_count_1_yes(self):
-        """Actually greet ONE job from search results (test account safe)."""
-        result = _invoke("batch-greet", "golang", "--city", "杭州", "-n", "1", "-y")
-        assert result.exit_code == 0
-        # Should show completion or API error
-        assert "完成" in result.output or "搜索失败" in result.output
-
-
-# ── Roundtrip workflows ────────────────────────────────────────────
-
-
-@smoke
-class TestRoundtrip:
-    """Multi-step workflow smoke tests — verify session stays valid."""
-
-    def test_status_then_me(self):
-        """Check auth then profile."""
-        r1 = _invoke("status")
-        assert r1.exit_code == 0
-        r2 = _invoke("me")
-        assert r2.exit_code == 0
-
-    def test_search_then_recommend(self):
-        """Search then recommendations."""
-        r1 = _invoke("search", "golang", "--city", "杭州")
-        assert r1.exit_code == 0
-        r2 = _invoke("recommend")
-        assert r2.exit_code == 0
-
-    def test_me_then_applied_then_interviews(self):
-        """Profile → applied → interviews."""
-        r1 = _invoke("me")
-        assert r1.exit_code == 0
-        r2 = _invoke("applied")
-        assert r2.exit_code == 0
-        r3 = _invoke("interviews")
-        assert r3.exit_code == 0
-
-    def test_full_workflow(self):
-        """Complete daily workflow: status → me → search → recommend → applied → chat."""
-        for cmd in [
-            ["status"],
-            ["me"],
-            ["search", "Python", "--city", "全国"],
-            ["recommend"],
-            ["applied"],
-            ["chat"],
-        ]:
-            result = _invoke(*cmd)
-            assert result.exit_code == 0, f"Command {cmd} failed: {result.output}"
-
-    def test_search_json_then_rich(self):
-        """Same search in JSON then rich format to verify both paths."""
-        r1 = _invoke("search", "golang", "--json")
-        assert r1.exit_code == 0
-        r2 = _invoke("search", "golang")
-        assert r2.exit_code == 0
-
-    def test_search_then_show(self):
-        """Search → show: verify short-index navigation works end-to-end."""
-        r1 = _invoke("search", "Python", "--city", "全国")
-        assert r1.exit_code == 0
-        # Show the first result from the search
-        r2 = _invoke("show", "1")
-        assert r2.exit_code == 0
-        # Should either show detail or an API error, not crash
-        assert "职位详情" in r2.output or "jobInfo" in r2.output or "获取详情失败" in r2.output or "暂无缓存" in r2.output
-
-
-# ── Detail ──────────────────────────────────────────────────────────
-
-
-@smoke
-class TestDetail:
-    """Test detail command - fetches full job info by securityId."""
-
-    def test_detail_no_id(self):
-        """detail without argument should error."""
-        result = _invoke("detail")
-        assert result.exit_code != 0
-
-    def test_detail_invalid_id(self):
-        """detail with invalid ID should not crash."""
-        result = _invoke("detail", "invalid_test_id")
-        assert result.exit_code == 0  # Should print error, not crash
-
-
-# ── Show ────────────────────────────────────────────────────────────
-
-
-@smoke
-class TestShow:
-    """Test show command - short index navigation."""
-
-    def test_show_first_from_search(self):
-        """Search first, then show #1."""
-        _invoke("search", "golang", "--city", "杭州")
-        result = _invoke("show", "1")
-        assert result.exit_code == 0
-
-    def test_show_out_of_range(self):
-        """Show with huge index should show friendly message."""
-        result = _invoke("show", "9999")
-        assert result.exit_code == 0
-        assert "超出范围" in result.output or "暂无缓存" in result.output
-
-
-# ── Export ──────────────────────────────────────────────────────────
-
-
-@smoke
-class TestExport:
-    """Test export command - CSV/JSON export."""
-
-    def test_export_csv_stdout(self):
-        """Export to stdout as CSV."""
-        result = _invoke("export", "Python", "--city", "全国", "-n", "3", "--format", "csv")
-        assert result.exit_code == 0
-        # CSV header or empty result
-        assert "职位" in result.output or "搜索失败" in result.output or "导出失败" in result.output
-
-    def test_export_json_stdout(self):
-        """Export to stdout as JSON."""
-        result = _invoke("export", "golang", "-n", "2", "--format", "json")
-        assert result.exit_code == 0
-
-    def test_export_to_file(self, tmp_path):
-        """Export to a file."""
-        out_file = str(tmp_path / "test_jobs.csv")
-        result = _invoke("export", "Python", "-n", "2", "-o", out_file)
-        assert result.exit_code == 0
-        if "导出失败" not in result.output:
-            assert "已导出" in result.output
-

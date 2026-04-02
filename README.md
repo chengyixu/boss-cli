@@ -121,51 +121,57 @@ boss -v search "Python"                # Verbose logging (request timing)
 If you are an employer on BOSS直聘, these commands let you manage candidates from the terminal:
 
 ```bash
-# ─── View Your Posted Jobs ──────────────────────
-boss recruiter-jobs                          # List all posted jobs with encryptJobId
-boss recruiter-jobs --json                   # JSON output
+# ─── Search & Discover ──────────────────────────
+boss recruiter search "golang" --city 深圳 --exp 3-5年    # Search candidates
+boss recruiter recommend                                    # Recommended candidates
+boss recruiter recommend --job <encryptJobId>               # For a specific job
 
-# ─── Candidate Inbox ────────────────────────────
-boss recruiter-inbox                         # View all candidate conversations
-boss recruiter-inbox --job <encryptJobId>    # Filter by specific job
-boss recruiter-inbox --label 1               # Filter by label (1=新招呼)
+# ─── Greet & Communicate ────────────────────────
+boss recruiter greet <encryptGeekId>                        # Initiate chat with candidate
+boss recruiter batch-greet "Python" --city 杭州 -n 10      # Batch greet top 10 matches
+boss recruiter batch-greet "golang" --dry-run               # Preview only
+boss recruiter inbox                                        # View candidate messages
+boss recruiter inbox --job <encryptJobId>                   # Filter by job
+boss recruiter reply <friendId> "感谢您的关注..."            # Reply to candidate
+boss recruiter reply <friendId> "..." --yes                 # Skip confirmation
 
-# ─── Candidate Profile ──────────────────────────
-boss recruiter-geek <encryptGeekId>          # View candidate details
-boss recruiter-geek <id> --job-id 526908510  # With specific job context
-boss recruiter-geek <id> --json              # JSON output with full profile
+# ─── Candidate Profile & Resume ─────────────────
+boss recruiter resume <encryptGeekId>                       # View full resume
+boss recruiter resume <id> --job <encryptJobId>             # With specific job context
+boss recruiter geek <encryptGeekId> --job-id 526908510      # Quick candidate info
 
-# ─── Chat History ───────────────────────────────
-boss recruiter-chat <friendId>               # View chat with candidate
-boss recruiter-chat <friendId> -n 50         # Last 50 messages
-
-# ─── Labels / Tags ──────────────────────────────
-boss recruiter-labels                        # List all candidate labels
-boss recruiter-labels --json                 # JSON output
-
-# ─── Export Candidates ──────────────────────────
-boss recruiter-export -o candidates.csv      # Export all candidates to CSV
-boss recruiter-export --job <id> -o out.csv  # Export candidates for a specific job
-boss recruiter-export --format json -o out.json  # Export as JSON
+# ─── Manage & Export ─────────────────────────────
+boss recruiter jobs                                         # List your posted jobs
+boss recruiter labels                                       # View candidate tags
+boss recruiter chat <friendId>                              # View chat history
+boss recruiter export -o candidates.csv                     # Export to CSV
+boss recruiter export --format json -o out.json             # Export to JSON
 ```
 
 ### Recruiter Workflow Example
 
 ```bash
 # 1. Check your posted jobs
-boss recruiter-jobs
+boss recruiter jobs
 
-# 2. See who messaged you for a specific job
-boss recruiter-inbox --job f806096ea327cd610nZ80t21FVNQ
+# 2. See recommended candidates
+boss recruiter recommend
 
-# 3. View a candidate's full profile
-boss recruiter-geek 9baf80468c8bc8980HZ82N25FlU~ --job-id 526908510
+# 3. Search for specific skills
+boss recruiter search "golang" --city 深圳
 
-# 4. Read chat history
-boss recruiter-chat 72630467
+# 4. View a candidate's full resume
+boss recruiter resume <encryptGeekId> --job <encryptJobId>
 
-# 5. Export all candidates for offline review
-boss recruiter-export --format json -o candidates.json
+# 5. Start a conversation
+boss recruiter greet <encryptGeekId>
+
+# 6. Reply to incoming messages
+boss recruiter inbox
+boss recruiter reply <friendId> "感谢您的关注，方便电话聊聊吗？"
+
+# 7. Export all candidates for offline review
+boss recruiter export --format json -o candidates.json
 ```
 
 ## Structured Output
@@ -352,25 +358,25 @@ boss -v search "Python"                # 详细日志
 ## 招聘方模式
 
 ```bash
-# 查看招聘职位
-boss recruiter-jobs
+# 搜索候选人
+boss recruiter search "golang" --city 深圳 --exp 3-5年
+boss recruiter recommend                     # 推荐候选人
 
-# 查看候选人列表
-boss recruiter-inbox                         # 全部候选人
-boss recruiter-inbox --job <encryptJobId>    # 按职位筛选
+# 沟通
+boss recruiter greet <encryptGeekId>         # 向候选人打招呼
+boss recruiter batch-greet "Python" -n 10    # 批量打招呼
+boss recruiter inbox                         # 查看候选人消息
+boss recruiter reply <friendId> "您好..."     # 回复候选人
 
-# 查看候选人详情
-boss recruiter-geek <encryptGeekId> --job-id <jobId>
+# 简历 & 详情
+boss recruiter resume <encryptGeekId>        # 查看完整简历
+boss recruiter geek <encryptGeekId>          # 查看候选人详情
 
-# 查看聊天记录
-boss recruiter-chat <friendId>
-
-# 标签管理
-boss recruiter-labels
-
-# 导出候选人
-boss recruiter-export -o candidates.csv      # CSV 导出
-boss recruiter-export --format json -o out.json  # JSON 导出
+# 管理 & 导出
+boss recruiter jobs                          # 查看招聘职位
+boss recruiter labels                        # 查看标签
+boss recruiter chat <friendId>               # 查看聊天记录
+boss recruiter export -o candidates.csv      # 导出候选人
 ```
 
 ## 常见问题

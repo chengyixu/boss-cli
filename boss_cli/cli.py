@@ -17,7 +17,7 @@ import logging
 import click
 
 from . import __version__
-from .commands import auth, personal, search, social
+from .commands import auth, personal, recruiter, search, social
 
 
 @click.group()
@@ -60,6 +60,15 @@ cli.add_command(personal.interviews)
 cli.add_command(social.chat_list)
 cli.add_command(social.greet)
 cli.add_command(social.batch_greet)
+
+# ─── Recruiter (Boss) commands ──────────────────────────────────────
+
+cli.add_command(recruiter.recruiter_jobs)
+cli.add_command(recruiter.recruiter_inbox)
+cli.add_command(recruiter.recruiter_geek)
+cli.add_command(recruiter.recruiter_chat)
+cli.add_command(recruiter.recruiter_labels)
+cli.add_command(recruiter.recruiter_export)
 
 
 if __name__ == "__main__":

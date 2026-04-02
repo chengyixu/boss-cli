@@ -41,6 +41,23 @@ FRIEND_LIST_URL = "/wapi/zprelation/friend/getGeekFriendList.json"
 FRIEND_ADD_URL = "/wapi/zpgeek/friend/add.json"
 GEEK_GET_JOB_URL = "/wapi/zprelation/interaction/geekGetJob"
 
+# ── Recruiter (Boss) API ──────────────────────────────────────────
+WEB_BOSS_CHAT_URL = f"{BASE_URL}/web/chat/index"
+WEB_BOSS_RECOMMEND_URL = f"{BASE_URL}/web/chat/recommend"
+BOSS_FRIEND_LIST_URL = "/wapi/zprelation/friend/filterByLabel"
+BOSS_FRIEND_DETAIL_URL = "/wapi/zprelation/friend/getBossFriendListV2.json"
+BOSS_LAST_MSG_URL = "/wapi/zpchat/boss/userLastMsg"
+BOSS_HISTORY_MSG_URL = "/wapi/zpchat/boss/historyMsg"
+BOSS_CHATTED_JOB_LIST_URL = "/wapi/zpjob/job/chatted/jobList"
+BOSS_CHAT_GEEK_INFO_URL = "/wapi/zpjob/chat/geek/info"
+BOSS_VIEW_GEEK_INFO_URL = "/wapi/zpjob/view/geek/info"
+BOSS_FRIEND_LABELS_URL = "/wapi/zprelation/friend/label/get"
+BOSS_FRIEND_NOTE_URL = "/wapi/zprelation/friend/getNoteAndLabels"
+BOSS_GREET_SORT_LIST_URL = "/wapi/zprelation/friend/greetSort/getList"
+BOSS_GREET_REC_SORT_URL = "/wapi/zprelation/friend/greetRecSortList"
+BOSS_INTERVIEW_LIST_URL = "/wapi/zpinterview/boss/interview/valid/list"
+BOSS_INTERVIEW_DETAIL_URL = "/wapi/zpinterview/boss/interview/detail"
+
 # ── Request Headers (Chrome 145, macOS) ─────────────────────────────
 HEADERS = {
     "User-Agent": (

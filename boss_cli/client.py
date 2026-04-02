@@ -13,6 +13,17 @@ import httpx
 
 from .constants import (
     BASE_URL,
+    BOSS_CHAT_GEEK_INFO_URL,
+    BOSS_CHATTED_JOB_LIST_URL,
+    BOSS_FRIEND_DETAIL_URL,
+    BOSS_FRIEND_LABELS_URL,
+    BOSS_FRIEND_LIST_URL,
+    BOSS_FRIEND_NOTE_URL,
+    BOSS_GREET_REC_SORT_URL,
+    BOSS_GREET_SORT_LIST_URL,
+    BOSS_HISTORY_MSG_URL,
+    BOSS_INTERVIEW_LIST_URL,
+    BOSS_LAST_MSG_URL,
     CITY_CODES,
     DELIVER_LIST_URL,
     FRIEND_ADD_URL,
@@ -28,6 +39,7 @@ from .constants import (
     RESUME_EXPECT_URL,
     RESUME_STATUS_URL,
     USER_INFO_URL,
+    WEB_BOSS_CHAT_URL,
     WEB_GEEK_CHAT_URL,
     WEB_GEEK_HISTORY_URL,
     WEB_GEEK_JOB_URL,
@@ -171,6 +183,12 @@ class BossClient:
             headers["Referer"] = WEB_GEEK_HISTORY_URL
         elif url in (FRIEND_LIST_URL, FRIEND_ADD_URL):
             headers["Referer"] = WEB_GEEK_CHAT_URL
+        # Recruiter (boss) endpoints
+        elif url in (BOSS_FRIEND_LIST_URL, BOSS_FRIEND_DETAIL_URL, BOSS_LAST_MSG_URL,
+                      BOSS_HISTORY_MSG_URL, BOSS_CHAT_GEEK_INFO_URL, BOSS_FRIEND_LABELS_URL,
+                      BOSS_FRIEND_NOTE_URL, BOSS_GREET_SORT_LIST_URL, BOSS_GREET_REC_SORT_URL,
+                      BOSS_CHATTED_JOB_LIST_URL, BOSS_INTERVIEW_LIST_URL):
+            headers["Referer"] = WEB_BOSS_CHAT_URL
         return headers
 
     def _handle_response(self, data: dict[str, Any], action: str) -> dict[str, Any]:
@@ -398,6 +416,84 @@ class BossClient:
     def get_geek_job(self, security_id: str) -> dict[str, Any]:
         """Get interacted job info."""
         return self._get(GEEK_GET_JOB_URL, params={"securityId": security_id}, action="互动职位")
+
+    # ── Recruiter (Boss) Mode ────────────────────────────────────────
+
+    def _post(self, url: str, data: dict[str, Any] | None = None, action: str = "") -> dict[str, Any]:
+        """POST request with form-encoded body, response validation, and rate-limit retry."""
+        resp = self._request("POST", url, data=data)
+        try:
+            result = self._handle_response(resp, action)
+            self._rate_limit_count = 0
+            return result
+        except RateLimitError:
+            logger.info("Retrying after rate-limit cooldown...")
+            resp = self._request("POST", url, data=data)
+            result = self._handle_response(resp, action)
+            self._rate_limit_count = 0
+            return result
+
+    def get_boss_chatted_jobs(self) -> list[dict[str, Any]]:
+        """Get list of jobs the boss has posted (chatted job list)."""
+        return self._get(BOSS_CHATTED_JOB_LIST_URL, action="招聘职位列表")
+
+    def get_boss_friend_list(self, label_id: int = 0, enc_job_id: str = "", sort: str = "") -> dict[str, Any]:
+        """Get boss friend list (candidates who have chatted)."""
+        data: dict[str, Any] = {"labelId": label_id}
+        if enc_job_id:
+            data["encJobId"] = enc_job_id
+        if sort:
+            data["sort"] = sort
+        return self._post(BOSS_FRIEND_LIST_URL, data=data, action="候选人列表")
+
+    def get_boss_friend_details(self, friend_ids: list[int]) -> dict[str, Any]:
+        """Get detailed info for boss friends (candidates)."""
+        ids_str = ",".join(str(fid) for fid in friend_ids)
+        return self._post(BOSS_FRIEND_DETAIL_URL, data={"friendIds": ids_str}, action="候选人详情")
+
+    def get_boss_last_messages(self, friend_ids: list[int], src: int = 0) -> list[dict[str, Any]]:
+        """Get last message for each friend."""
+        ids_str = ",".join(str(fid) for fid in friend_ids)
+        return self._post(BOSS_LAST_MSG_URL, data={"friendIds": ids_str, "src": src}, action="最近消息")
+
+    def get_boss_chat_history(self, gid: int, count: int = 20, max_msg_id: int = 0) -> dict[str, Any]:
+        """Get chat history with a specific candidate."""
+        params: dict[str, Any] = {"gid": gid, "c": count, "src": 0}
+        if max_msg_id:
+            params["maxMsgId"] = max_msg_id
+        return self._get(BOSS_HISTORY_MSG_URL, params=params, action="聊天记录")
+
+    def get_boss_chat_geek_info(
+        self, encrypt_geek_id: str, security_id: str, job_id: int,
+    ) -> dict[str, Any]:
+        """Get detailed info for a candidate in chat context."""
+        return self._get(
+            BOSS_CHAT_GEEK_INFO_URL,
+            params={"encryptGeekId": encrypt_geek_id, "securityId": security_id, "jobId": job_id},
+            action="候选人信息",
+        )
+
+    def get_boss_friend_labels(self) -> dict[str, Any]:
+        """Get recruiter's friend labels/tags."""
+        return self._get(BOSS_FRIEND_LABELS_URL, action="标签列表")
+
+    def get_boss_greet_list(self, enc_job_id: str = "", page: int = 1) -> dict[str, Any]:
+        """Get list of new greetings (candidates who greeted the boss)."""
+        params: dict[str, Any] = {"page": page}
+        if enc_job_id:
+            params["encJobId"] = enc_job_id
+        return self._get(BOSS_GREET_SORT_LIST_URL, params=params, action="新招呼列表")
+
+    def get_boss_greet_rec_list(self, enc_job_id: str = "", page: int = 1) -> dict[str, Any]:
+        """Get recommended greeting sort list."""
+        params: dict[str, Any] = {"page": page}
+        if enc_job_id:
+            params["encJobId"] = enc_job_id
+        return self._get(BOSS_GREET_REC_SORT_URL, params=params, action="推荐招呼排序")
+
+    def get_boss_interview_list(self) -> dict[str, Any]:
+        """Get boss interview list."""
+        return self._get(BOSS_INTERVIEW_LIST_URL, action="面试列表")
 
 
 # ── City resolution ─────────────────────────────────────────────────

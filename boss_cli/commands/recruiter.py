@@ -155,7 +155,7 @@ def recruiter_recommend(page: int, enc_job_id: str, as_json: bool, as_yaml: bool
             return
 
         table = Table(
-            title=f"推荐候选人 ({len(friend_list)} 人, 上限 {limit})",
+            title=f"推荐候选人 ({len(friend_list)} 人, 上限 {limit}) — 第 {page} 页",
             show_lines=True,
         )
         table.add_column("#", style="dim", width=3)
@@ -177,6 +177,11 @@ def recruiter_recommend(page: int, enc_job_id: str, as_json: bool, as_yaml: bool
             )
 
         console.print(table)
+
+        if friend_list:
+            console.print(f"  [dim]下一页: boss recruiter recommend -p {page + 1}[/dim]")
+        console.print("  [dim]切换职位: boss recruiter recommend --job <encryptJobId>[/dim]")
+        console.print("  [dim]查看职位列表: boss recruiter jobs[/dim]")
 
     handle_command(cred, action=_action, render=_render, as_json=as_json, as_yaml=as_yaml)
 
@@ -330,13 +335,14 @@ def recruiter_batch_greet(
 @recruiter.command("inbox")
 @click.option("--job", "enc_job_id", default="", help="按职位 encryptJobId 筛选")
 @click.option("--label", "label_id", default=0, type=int, help="按标签筛选 (0=全部)")
+@click.option("-p", "--page", default=1, type=int, help="页码 (默认: 1)")
 @structured_output_options
-def recruiter_inbox(enc_job_id: str, label_id: int, as_json: bool, as_yaml: bool) -> None:
+def recruiter_inbox(enc_job_id: str, label_id: int, page: int, as_json: bool, as_yaml: bool) -> None:
     """查看候选人消息列表 (招聘方沟通列表)"""
     cred = require_auth()
 
     def _action(c: BossClient) -> dict:
-        friend_data = c.get_boss_friend_list(label_id=label_id, enc_job_id=enc_job_id)
+        friend_data = c.get_boss_friend_list(label_id=label_id, enc_job_id=enc_job_id, page=page)
         friend_list = friend_data.get("result", [])
 
         if not friend_list:
@@ -367,7 +373,7 @@ def recruiter_inbox(enc_job_id: str, label_id: int, as_json: bool, as_yaml: bool
                 if uid:
                     msg_map[uid] = msg
 
-        table = Table(title=f"候选人列表 ({len(detail_list)} 人)", show_lines=True)
+        table = Table(title=f"候选人列表 ({len(detail_list)} 人) — 第 {page} 页", show_lines=True)
         table.add_column("#", style="dim", width=3)
         table.add_column("候选人", style="bold cyan", max_width=12)
         table.add_column("职位", style="green", max_width=20)
@@ -393,6 +399,8 @@ def recruiter_inbox(enc_job_id: str, label_id: int, as_json: bool, as_yaml: bool
 
         console.print(table)
         console.print("  [dim]使用 boss recruiter resume <encryptGeekId> 查看候选人简历[/dim]")
+        if detail_list:
+            console.print(f"  [dim]下一页: boss recruiter inbox -p {page + 1}[/dim]")
 
     handle_command(cred, action=_action, render=_render, as_json=as_json, as_yaml=as_yaml)
 
@@ -690,6 +698,7 @@ def recruiter_chat(friend_id: int, count: int, as_json: bool, as_yaml: bool) -> 
             table.add_row(str(i), direction, text, msg_type)
 
         console.print(table)
+        console.print(f"  [dim]加载更多: boss recruiter chat {friend_id} -n {count + 20}[/dim]")
 
     handle_command(cred, action=_action, render=_render, as_json=as_json, as_yaml=as_yaml)
 
@@ -778,3 +787,237 @@ def recruiter_geek(
         console.print(panel)
 
     handle_command(cred, action=_action, render=_render, as_json=as_json, as_yaml=as_yaml)
+
+
+# ── recruiter resume-download ─────────────────────────────────────
+
+
+@recruiter.command("resume-download")
+@click.argument("encrypt_geek_id")
+@click.option("--job", "encrypt_job_id", default="", help="关联职位 encryptJobId")
+@click.option("--security-id", default="", help="候选人 securityId")
+@click.option("-o", "--output", "output_file", default=None, help="输出文件路径 (默认: <姓名>_resume.md)")
+def recruiter_resume_download(
+    encrypt_geek_id: str, encrypt_job_id: str, security_id: str, output_file: str | None,
+) -> None:
+    """导出候选人简历为 Markdown 文件"""
+    cred = require_auth()
+
+    try:
+        def _fetch(c: BossClient) -> dict:
+            nonlocal encrypt_job_id, security_id
+            if not encrypt_job_id:
+                jobs = c.get_boss_chatted_jobs()
+                if jobs:
+                    encrypt_job_id = jobs[0].get("encryptJobId", "")
+
+            if not encrypt_job_id:
+                return {"error": "未找到关联职位, 请通过 --job 指定 encryptJobId"}
+
+            # Auto-fetch securityId from friend list if not provided
+            if not security_id:
+                friend_data = c.get_boss_friend_list()
+                for f in friend_data.get("result", []):
+                    if f.get("encryptFriendId") == encrypt_geek_id:
+                        friend_ids = [f["friendId"]]
+                        details = c.get_boss_friend_details(friend_ids)
+                        for fd in details.get("friendList", []):
+                            security_id = fd.get("securityId", "")
+                            break
+                        break
+
+            return c.get_boss_view_geek(
+                encrypt_geek_id=encrypt_geek_id,
+                encrypt_job_id=encrypt_job_id,
+                security_id=security_id,
+            )
+
+        data = run_client_action(cred, _fetch)
+
+        if data.get("error"):
+            console.print(f"[red]{data['error']}[/red]")
+            return
+
+        # Build markdown
+        geek_detail = data.get("geekDetailInfo", data)
+        base_info = geek_detail.get("geekBaseInfo", geek_detail)
+
+        name = base_info.get("name", base_info.get("geekName", "candidate"))
+        gender_val = base_info.get("gender", 0)
+        gender = "男" if gender_val == 1 else "女" if gender_val == 2 else ""
+        degree = base_info.get("degreeCategory", base_info.get("degree", ""))
+        work_year = base_info.get("workYearDesc", base_info.get("workYear", ""))
+        age = base_info.get("ageDesc", base_info.get("age", ""))
+        apply_status = base_info.get("applyStatusContent", base_info.get("applyStatus", ""))
+        expect_position = base_info.get("expectPosition", "")
+        expect_city = base_info.get("expectCity", "")
+        expect_salary = base_info.get("expectSalary", base_info.get("salaryDesc", ""))
+
+        lines: list[str] = []
+        lines.append(f"# {name}")
+        lines.append("")
+
+        info_parts = [p for p in [gender, age, degree, work_year] if p]
+        if info_parts:
+            lines.append(" | ".join(info_parts))
+            lines.append("")
+
+        if apply_status:
+            lines.append(f"**求职状态:** {apply_status}")
+            lines.append("")
+
+        expect_parts = [p for p in [expect_position, expect_city, expect_salary] if p]
+        if expect_parts:
+            lines.append("## 求职期望")
+            lines.append("")
+            lines.append(" | ".join(expect_parts))
+            lines.append("")
+
+        # Work experience
+        work_exp = geek_detail.get("geekWorkExpList", base_info.get("workExpList", []))
+        if work_exp:
+            lines.append("## 工作经历")
+            lines.append("")
+            for w in work_exp:
+                company = w.get("company", w.get("companyName", ""))
+                position = w.get("positionName", w.get("position", ""))
+                time_desc = w.get("timeDesc", w.get("workTime", ""))
+                industry = w.get("industry", "")
+                desc = w.get("description", w.get("workDesc", ""))
+                header = f"### {company}"
+                if industry:
+                    header += f" ({industry})"
+                lines.append(header)
+                lines.append("")
+                if time_desc:
+                    lines.append(f"**{time_desc}** - {position}")
+                elif position:
+                    lines.append(f"**{position}**")
+                lines.append("")
+                if desc:
+                    lines.append(desc)
+                    lines.append("")
+
+        # Education
+        edu_exp = geek_detail.get("geekEduExpList", base_info.get("eduExpList", []))
+        if edu_exp:
+            lines.append("## 教育经历")
+            lines.append("")
+            for e in edu_exp:
+                school = e.get("school", e.get("schoolName", ""))
+                major_name = e.get("major", e.get("majorName", ""))
+                degree_name = e.get("degree", e.get("degreeName", ""))
+                time_desc = e.get("timeDesc", e.get("eduTime", ""))
+                header = f"### {school}"
+                if degree_name:
+                    header += f" - {degree_name}"
+                lines.append(header)
+                lines.append("")
+                parts = [p for p in [time_desc, major_name] if p]
+                if parts:
+                    lines.append(" | ".join(parts))
+                    lines.append("")
+
+        # Projects
+        project_exp = geek_detail.get("geekProjectExpList", base_info.get("projectExpList", []))
+        if project_exp:
+            lines.append("## 项目经历")
+            lines.append("")
+            for p in project_exp:
+                proj_name = p.get("projectName", p.get("name", ""))
+                role = p.get("roleName", p.get("role", ""))
+                time_desc = p.get("timeDesc", p.get("projectTime", ""))
+                desc = p.get("description", p.get("projectDesc", ""))
+                header = f"### {proj_name}"
+                if role:
+                    header += f" ({role})"
+                lines.append(header)
+                lines.append("")
+                if time_desc:
+                    lines.append(f"**{time_desc}**")
+                    lines.append("")
+                if desc:
+                    lines.append(desc)
+                    lines.append("")
+
+        md_content = "\n".join(lines).rstrip() + "\n"
+
+        # Write to file or stdout
+        if output_file is None:
+            safe_name = name.replace("/", "_").replace(" ", "_")
+            output_file = f"{safe_name}_resume.md"
+
+        if output_file == "-":
+            click.echo(md_content)
+        else:
+            with open(output_file, "w", encoding="utf-8") as fh:
+                fh.write(md_content)
+            console.print(f"[green]简历已导出到 {output_file}[/green]")
+
+    except BossApiError as exc:
+        console.print(f"[red]导出失败: {exc}[/red]")
+        raise SystemExit(1) from None
+
+
+# ── recruiter job-close ─────────────────────────────────────────────
+
+
+@recruiter.command("job-close")
+@click.argument("encrypt_job_id")
+@click.option("-y", "--yes", is_flag=True, help="跳过确认提示")
+def recruiter_job_close(encrypt_job_id: str, yes: bool) -> None:
+    """关闭/下线职位 (Take job offline)"""
+    cred = require_auth()
+
+    if not yes:
+        confirm = click.confirm(f"确定关闭职位 {encrypt_job_id}?")
+        if not confirm:
+            console.print("[dim]已取消[/dim]")
+            return
+
+    try:
+        result = run_client_action(cred, lambda c: c.boss_job_offline(encrypt_job_id))
+        console.print(f"[green]职位已关闭: {encrypt_job_id}[/green]")
+        if result:
+            console.print(f"  [dim]{json.dumps(result, ensure_ascii=False)[:200]}[/dim]")
+    except BossApiError as exc:
+        msg = str(exc)
+        console.print(f"[red]关闭职位失败: {msg}[/red]")
+        if "缺少必要参数" in msg or "stoken" in msg.lower():
+            console.print(
+                "  [yellow]提示: 该操作可能需要浏览器端 __zp_stoken__ 验证。\n"
+                "  请尝试在浏览器中操作, 或重新登录后重试: boss logout && boss login[/yellow]"
+            )
+        raise SystemExit(1) from None
+
+
+# ── recruiter job-reopen ────────────────────────────────────────────
+
+
+@recruiter.command("job-reopen")
+@click.argument("encrypt_job_id")
+@click.option("-y", "--yes", is_flag=True, help="跳过确认提示")
+def recruiter_job_reopen(encrypt_job_id: str, yes: bool) -> None:
+    """重新开启/上线职位 (Bring job online)"""
+    cred = require_auth()
+
+    if not yes:
+        confirm = click.confirm(f"确定重新开启职位 {encrypt_job_id}?")
+        if not confirm:
+            console.print("[dim]已取消[/dim]")
+            return
+
+    try:
+        result = run_client_action(cred, lambda c: c.boss_job_online(encrypt_job_id))
+        console.print(f"[green]职位已开启: {encrypt_job_id}[/green]")
+        if result:
+            console.print(f"  [dim]{json.dumps(result, ensure_ascii=False)[:200]}[/dim]")
+    except BossApiError as exc:
+        msg = str(exc)
+        console.print(f"[red]开启职位失败: {msg}[/red]")
+        if "缺少必要参数" in msg or "stoken" in msg.lower():
+            console.print(
+                "  [yellow]提示: 该操作可能需要浏览器端 __zp_stoken__ 验证。\n"
+                "  请尝试在浏览器中操作, 或重新登录后重试: boss logout && boss login[/yellow]"
+            )
+        raise SystemExit(1) from None

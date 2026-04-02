@@ -23,6 +23,8 @@ from .constants import (
     BOSS_GREET_SORT_LIST_URL,
     BOSS_HISTORY_MSG_URL,
     BOSS_INTERVIEW_LIST_URL,
+    BOSS_JOB_OFFLINE_URL,
+    BOSS_JOB_ONLINE_URL,
     BOSS_LAST_MSG_URL,
     BOSS_SEARCH_GEEK_URL,
     BOSS_SEND_MSG_URL,
@@ -444,9 +446,9 @@ class BossClient:
         """Get list of jobs the boss has posted (chatted job list)."""
         return self._get(BOSS_CHATTED_JOB_LIST_URL, action="招聘职位列表")
 
-    def get_boss_friend_list(self, label_id: int = 0, enc_job_id: str = "", sort: str = "") -> dict[str, Any]:
+    def get_boss_friend_list(self, label_id: int = 0, enc_job_id: str = "", sort: str = "", page: int = 1) -> dict[str, Any]:
         """Get boss friend list (candidates who have chatted)."""
-        data: dict[str, Any] = {"labelId": label_id}
+        data: dict[str, Any] = {"labelId": label_id, "page": page}
         if enc_job_id:
             data["encJobId"] = enc_job_id
         if sort:
@@ -547,6 +549,14 @@ class BossClient:
             data={"gid": gid, "content": content},
             action="发送消息",
         )
+
+    def boss_job_offline(self, encrypt_job_id: str) -> dict[str, Any]:
+        """Take a job posting offline (close)."""
+        return self._post(BOSS_JOB_OFFLINE_URL, data={"encryptJobId": encrypt_job_id}, action="关闭职位")
+
+    def boss_job_online(self, encrypt_job_id: str) -> dict[str, Any]:
+        """Bring a job posting online (reopen)."""
+        return self._post(BOSS_JOB_ONLINE_URL, data={"encryptJobId": encrypt_job_id}, action="开启职位")
 
 
 # ── City resolution ─────────────────────────────────────────────────

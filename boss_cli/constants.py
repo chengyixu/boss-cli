@@ -62,6 +62,8 @@ BOSS_SEARCH_GEEK_URL = "/wapi/zpitem/web/boss/search/geek/info"
 BOSS_VIEW_GEEK_URL = "/wapi/zpjob/view/geek/info"
 BOSS_SEND_MSG_URL = "/wapi/zpchat/fastReply/sendReplyMsg"
 BOSS_FRIEND_ADD_URL = "/wapi/zprelation/friend/bossAddFriend"
+BOSS_JOB_OFFLINE_URL = "/wapi/zpjob/job/offline"
+BOSS_JOB_ONLINE_URL = "/wapi/zpjob/job/online"
 
 # ── Request Headers (Chrome 145, macOS) ─────────────────────────────
 HEADERS = {

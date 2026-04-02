@@ -282,6 +282,14 @@ class BossClient:
                     time.sleep(wait)
                     continue
 
+                # For non-server errors (4xx except 404), raise immediately
+                if resp.status_code == 404:
+                    # Some endpoints return 404 when anti-bot blocks the request
+                    text = resp.text
+                    if text.strip().startswith("{"):
+                        return resp.json()
+                    raise BossApiError(f"接口不存在: {url} (HTTP 404)", code=404)
+
                 resp.raise_for_status()
 
                 # Check for HTML responses (redirect to login page)
@@ -448,16 +456,17 @@ class BossClient:
 
     # ── Recruiter (Boss) Mode ────────────────────────────────────────
 
-    def _post(self, url: str, data: dict[str, Any] | None = None, action: str = "") -> dict[str, Any]:
-        """POST request with form-encoded body, response validation, and rate-limit retry."""
-        resp = self._request("POST", url, data=data)
+    def _post(self, url: str, data: dict[str, Any] | None = None, action: str = "", json_body: bool = False) -> dict[str, Any]:
+        """POST request with form-encoded or JSON body, response validation, and rate-limit retry."""
+        kwargs = {"json": data} if json_body else {"data": data}
+        resp = self._request("POST", url, **kwargs)
         try:
             result = self._handle_response(resp, action)
             self._rate_limit_count = 0
             return result
         except RateLimitError:
             logger.info("Retrying after rate-limit cooldown...")
-            resp = self._request("POST", url, data=data)
+            resp = self._request("POST", url, **kwargs)
             result = self._handle_response(resp, action)
             self._rate_limit_count = 0
             return result
@@ -587,7 +596,7 @@ class BossClient:
         """
         return self._post(
             BOSS_EXCHANGE_REQUEST_URL,
-            data={"type": exchange_type, "uid": uid, "jobId": job_id},
+            data={"type": exchange_type, "uid": uid, "jobId": job_id, "gid": uid},
             action="交换请求",
         )
 
@@ -615,7 +624,7 @@ class BossClient:
             data["startTime"] = start_time
         if description:
             data["description"] = description
-        return self._post(BOSS_INTERVIEW_INVITE_URL, data=data, action="约面试")
+        return self._post(BOSS_INTERVIEW_INVITE_URL, data=data, action="约面试", json_body=True)
 
     def boss_mark_unsuitable(self, encrypt_geek_id: str, encrypt_job_id: str) -> dict[str, Any]:
         """Mark candidate as unsuitable."""

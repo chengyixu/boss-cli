@@ -210,36 +210,44 @@ def recruiter_recommend(
 
 @recruiter.command("greet")
 @click.argument("encrypt_geek_id")
-@click.option("--job", "encrypt_job_id", default="", help="关联职位 encryptJobId")
+@click.option("--job", "encrypt_job_id", required=True, help="目标职位 encryptJobId (必填)")
+@click.option("--security-id", "security_id", required=True, help="候选人 securityId (从 recommend/search 结果获取)")
+@click.option("--expect-id", "expect_id", default="", help="候选人 expectId (可选, 提升送达率)")
+@click.option("--lid", default="", help="推荐链路 lid (可选, 提升送达率)")
+@click.option("-m", "--message", "greet_msg", default="", help="自定义首条消息 (留空使用 BOSS 默认招呼模板)")
 @structured_output_options
-def recruiter_greet(encrypt_geek_id: str, encrypt_job_id: str, as_json: bool, as_yaml: bool) -> None:
-    """向候选人发起沟通 (Initiate conversation with candidate)"""
+def recruiter_greet(
+    encrypt_geek_id: str, encrypt_job_id: str, security_id: str,
+    expect_id: str, lid: str, greet_msg: str,
+    as_json: bool, as_yaml: bool,
+) -> None:
+    """打招呼 — 向候选人发起沟通, 可选附带自定义首条消息。
+
+    打到 BOSS 真实的 ``/wapi/zpjob/chat/start`` 接口 (web 端 "打招呼" 按钮的同款)。
+    需要 ``--security-id`` (在 ``recruiter recommend`` / ``recruiter search`` 返回里有)。
+    传 ``-m`` 时, BOSS 会把消息作为聊天的第一条投递, 省一次后续 reply 请求。
+    """
     cred = require_auth()
 
     def _action(c: BossClient) -> dict:
-        # Get job id if not provided
-        job_id = encrypt_job_id
-        if not job_id:
-            jobs = c.get_boss_chatted_jobs()
-            if jobs:
-                job_id = jobs[0].get("encryptJobId", "")
-
-        # View the geek first to show info
-        if job_id:
-            info = c.get_boss_view_geek(
-                encrypt_geek_id=encrypt_geek_id,
-                encrypt_job_id=job_id,
-            )
-        else:
-            info = {"encryptGeekId": encrypt_geek_id, "note": "无关联职位, 无法获取详情"}
-        return info
+        return c.boss_chat_start(
+            encrypt_geek_id=encrypt_geek_id,
+            encrypt_job_id=encrypt_job_id,
+            security_id=security_id,
+            expect_id=expect_id,
+            lid=lid,
+            greet=greet_msg,
+        )
 
     def _render(data: dict) -> None:
-        geek_info = data.get("geekDetailInfo", data.get("geekBaseInfo", data))
-        base_info = geek_info.get("geekBaseInfo", geek_info) if isinstance(geek_info, dict) else data
-        name = base_info.get("name", base_info.get("geekName", "-"))
-        console.print(f"[cyan]候选人: {name}[/cyan]  encryptGeekId={encrypt_geek_id}")
-        console.print("[dim]提示: 使用 boss recruiter reply <friendId> <message> 发送消息[/dim]")
+        geek_id = data.get("geekId")
+        new = data.get("newfriend") == 1
+        status = "新沟通" if new else "已沟通"
+        console.print(f"[green]✓ 已打招呼[/green]  encryptGeekId={encrypt_geek_id}  geekId={geek_id}  状态={status}")
+        if greet_msg:
+            console.print(f"[dim]首条消息已发送: {greet_msg[:60]}{'…' if len(greet_msg) > 60 else ''}[/dim]")
+        else:
+            console.print("[dim]使用了 BOSS 默认招呼模板; 后续可用 boss recruiter reply <geekId> <msg>[/dim]")
 
     handle_command(cred, action=_action, render=_render, as_json=as_json, as_yaml=as_yaml)
 

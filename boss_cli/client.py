@@ -23,6 +23,7 @@ from .constants import (
     BOSS_FRIEND_NOTE_URL,
     BOSS_GREET_REC_SORT_URL,
     BOSS_REC_GEEK_LIST_URL,
+    BOSS_CHAT_START_URL,
     BOSS_GREET_SORT_LIST_URL,
     BOSS_HISTORY_MSG_URL,
     BOSS_INTERVIEW_INVITE_URL,
@@ -203,6 +204,8 @@ class BossClient:
         elif url == BOSS_SEARCH_GEEK_URL:
             headers["Referer"] = f"{BASE_URL}/web/chat/search"
         elif url == BOSS_REC_GEEK_LIST_URL:
+            headers["Referer"] = f"{BASE_URL}/web/frame/recommend/"
+        elif url == BOSS_CHAT_START_URL:
             headers["Referer"] = f"{BASE_URL}/web/frame/recommend/"
         elif url in (BOSS_VIEW_GEEK_URL, BOSS_SEND_MSG_URL):
             headers["Referer"] = WEB_BOSS_CHAT_URL
@@ -587,16 +590,48 @@ class BossClient:
         return self._get(BOSS_REC_GEEK_LIST_URL, params=params, action="推荐牛人")
 
     def get_boss_view_geek(
-        self, encrypt_geek_id: str, encrypt_job_id: str, security_id: str = "",
+        self, encrypt_geek_id: str = "", encrypt_job_id: str = "", security_id: str = "",
     ) -> dict[str, Any]:
-        """Get full candidate resume/profile view."""
-        params: dict[str, Any] = {
-            "encryptGeekId": encrypt_geek_id,
-            "encryptJobId": encrypt_job_id,
-        }
+        """Get full candidate resume/profile view.
+
+        BOSS prefers ``securityId`` alone — that's what the web page sends.
+        The ``encryptGeekId + encryptJobId`` combo returns ``code=2 未知的非法参数``.
+        """
+        params: dict[str, Any] = {}
         if security_id:
             params["securityId"] = security_id
+        else:
+            if not (encrypt_geek_id and encrypt_job_id):
+                raise ValueError("view_geek needs either security_id, or (encrypt_geek_id + encrypt_job_id)")
+            params["encryptGeekId"] = encrypt_geek_id
+            params["encryptJobId"] = encrypt_job_id
         return self._get(BOSS_VIEW_GEEK_URL, params=params, action="候选人简历")
+
+    def boss_chat_start(
+        self, encrypt_geek_id: str, encrypt_job_id: str, security_id: str,
+        expect_id: int | str = "", lid: str = "", greet: str = "",
+    ) -> dict[str, Any]:
+        """Open a chat with a candidate ("打招呼"), optionally with a custom first message.
+
+        Hits ``/wapi/zpjob/chat/start`` — the same endpoint the recruiter web UI
+        calls when you click the "打招呼" button. Returns ``zpData.geekId`` (the
+        numeric ID needed by ``boss_send_message``).
+
+        If ``greet`` is non-empty, BOSS delivers it as the first message in the
+        chat — saves a separate ``sendReplyMsg`` round-trip.
+        """
+        data = {
+            "gid": encrypt_geek_id,
+            "suid": "",
+            "jid": encrypt_job_id,
+            "expectId": str(expect_id) if expect_id else "",
+            "lid": lid,
+            "greet": greet,
+            "from": "",
+            "securityId": security_id,
+            "customGreetingGuide": "-1",
+        }
+        return self._post(BOSS_CHAT_START_URL, data=data, action="打招呼")
 
     def boss_send_message(self, gid: int, content: str) -> dict[str, Any]:
         """Send a text message to a candidate as a recruiter."""
